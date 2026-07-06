@@ -19,3 +19,7 @@ frontend/dist/
 
 # Session artifacts
 .playwright-mcp/
+
+# claude 
+.claude/
+.claude/worktrees/
