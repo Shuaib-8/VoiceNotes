@@ -1,0 +1,45 @@
+[project]
+name = "voice-notes"
+version = "0.1.0"
+description = "Personal, local-first voice notes: record or upload, transcribe locally, keep every note as plain files."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "starlette>=0.49.1",
+    "mlx-whisper>=0.4",
+    "imageio-ffmpeg>=0.5",
+    "python-multipart>=0.0.12",
+    "pydantic>=2.8",
+    "pyyaml>=6.0.3",
+    "numpy>=2.4.6",
+]
+
+[project.scripts]
+voice-notes = "voice_notes.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.27",
+    "ruff>=0.8",
+    "pyrefly>=0.16",
+    "types-pyyaml>=6.0.12.20260518",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: real-engine tests (first run downloads the model; excluded by default)"]
+addopts = "-m 'not slow'"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.pyrefly]
+search-path = ["src", "tests"]

@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: Local Voice Notes — capture + recall with local models</title>
+<style>
+  :root{
+    --bg:#faf9f7; --ink:#20242a; --muted:#5c6470; --line:#e5e2dc; --card:#ffffff;
+    --accent:#0e7569; --accent-soft:#e4f2ef;
+    --direct-t:#166534; --direct-b:#ddf2e2;
+    --external-t:#1d4ed8; --external-b:#e0e9fd;
+    --reasoned-t:#6d28d9; --reasoned-b:#ece5fb;
+    --warn-t:#92400e; --warn-b:#fdf0dd;
+    --neutral-b:#f1efeb; --neutral-t:#454b54;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .page{max-width:920px;margin-inline:auto;padding:48px 28px 40px}
+  p,li{max-width:72ch}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid #9fcdc5}
+  a:hover{border-bottom-color:var(--accent)}
+  strong{color:inherit}
+  code{font:0.88em ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--neutral-b);
+       padding:1px 5px;border-radius:5px}
+  h1{font-size:1.9rem;line-height:1.25;margin:.35rem 0 .6rem;letter-spacing:-.01em}
+  h2{font-size:1.35rem;margin:2.6rem 0 .8rem;letter-spacing:-.01em}
+  h3{font-size:1.06rem;margin:1.4rem 0 .45rem}
+  .eyebrow{font-size:.72rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  .meta{color:var(--muted);font-size:.9rem;margin:.2rem 0 0}
+  .meta b{color:var(--ink);font-weight:600}
+  .stats{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0 6px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:10px 16px;min-width:118px}
+  .stat .n{font-size:1.25rem;font-weight:700;letter-spacing:-.01em}
+  .stat .l{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+  nav.toc{margin:20px 0 0;font-size:.92rem}
+  nav.toc a{margin-right:18px}
+  section{margin-top:2.2rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+        padding:22px 26px;margin:18px 0}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:.45rem 0 .9rem}
+  .chip{display:inline-block;font-size:.74rem;font-weight:600;letter-spacing:.03em;
+        padding:3px 11px;border-radius:999px;background:var(--neutral-b);color:var(--neutral-t)}
+  .chip.direct{background:var(--direct-b);color:var(--direct-t)}
+  .chip.external{background:var(--external-b);color:var(--external-t)}
+  .chip.reasoned{background:var(--reasoned-b);color:var(--reasoned-t)}
+  .chip.axis{background:var(--accent-soft);color:var(--accent)}
+  .rank{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+        border-radius:9px;background:var(--accent);color:#fff;font-weight:700;font-size:.95rem;
+        margin-right:10px;flex:none}
+  .idea-h{display:flex;align-items:center}
+  .idea-h h3{margin:0;font-size:1.18rem}
+  dl.fields{margin:.6rem 0 0}
+  dl.fields dt{font-size:.72rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+               color:var(--muted);margin-top:.95rem}
+  dl.fields dd{margin:.25rem 0 0}
+  .basis-block{border-radius:10px;padding:12px 16px;margin-top:.3rem}
+  .basis-block.external{background:var(--external-b)}
+  .basis-block.external .btag{color:var(--external-t)}
+  .basis-block.reasoned{background:var(--reasoned-b)}
+  .basis-block.reasoned .btag{color:var(--reasoned-t)}
+  .basis-block.direct{background:var(--direct-b)}
+  .basis-block.direct .btag{color:var(--direct-t)}
+  .btag{font-weight:700;font-size:.8rem}
+  .callout{background:var(--warn-b);border-radius:10px;padding:12px 16px;margin-top:.6rem}
+  .callout .ctag{color:var(--warn-t);font-weight:700;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase}
+  figure{margin:1.2rem 0 .4rem;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff}
+  figure svg{display:block;max-width:100%;height:auto}
+  figcaption{font-size:.82rem;color:var(--muted);margin-top:8px}
+  ul.jump{columns:2;gap:28px;padding-left:1.2rem;margin:.4rem 0 0;font-size:.94rem}
+  table{border-collapse:collapse;width:100%;font-size:.92rem;margin:.8rem 0}
+  th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  .src{columns:2;gap:30px;font-size:.88rem;padding-left:1.2rem}
+  .src li{margin-bottom:.35rem;break-inside:avoid}
+  footer.composition-signal{margin-top:3.2rem;padding-top:1rem;border-top:1px solid var(--line);
+        color:var(--muted);font-size:.82rem}
+  @media (max-width:640px){ ul.jump,.src{columns:1} .page{padding:30px 16px} }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="eyebrow">Ideation</div>
+  <h1>Local Voice Notes — a speech-to-text capture &amp; recall system</h1>
+  <p class="meta"><b>Date:</b> 2026-07-06 &nbsp;·&nbsp; <b>Topic:</b> local-voice-notes &nbsp;·&nbsp; <b>Mode:</b> elsewhere-software</p>
+  <p class="meta"><b>Focus:</b> a personal, local-first system — capture notes by voice on demand, transcribe with local models only, and recall them later through a polished web UI. Python backend; TypeScript frontend where needed; macOS (Apple Silicon).</p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">48</div><div class="l">raw ideas</div></div>
+    <div class="stat"><div class="n">28</div><div class="l">merged candidates</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">survivors</div></div>
+    <div class="stat"><div class="n">5 / 5</div><div class="l">axes covered</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">refuted bases</div></div>
+  </div>
+
+  <nav class="toc">
+    <a href="#grounding-context">Grounding Context</a>
+    <a href="#topic-axes">Topic Axes</a>
+    <a href="#ranked-ideas">Ranked Ideas</a>
+    <a href="#rejection-summary">Rejection Summary</a>
+  </nav>
+</header>
+
+<section id="grounding-context">
+  <h2>Grounding Context</h2>
+
+  <h3>Topic Context</h3>
+  <p><strong>Shape.</strong> Two core loops: voice capture → local transcription → durable storage, and later recall/reference. Delivery: Python backend + TypeScript web UI. Usage: on-demand — the user activates it to capture and returns to it to recall; nothing needs to run continuously.</p>
+  <p><strong>Hard constraints.</strong> Local models only (no cloud dependency for core function); on-demand operation; Python backend; TypeScript frontend where needed; capture <em>and</em> recall are both first-class; personal single-user tool. Polish ("nice web UI", "nice system") is an explicit requirement, not decoration.</p>
+  <p><strong>What the brief leaves open</strong> (the surface these ideas explore): which local STT model and hardware path; storage format; enrichment beyond the raw transcript; the recall interaction model (search-first vs browse-first vs timeline-first); error correction; durability/backup; single web app vs background service vs hybrid.</p>
+
+  <h3>External Research (fresh, 2026-07-06 — research value: high)</h3>
+  <ul>
+    <li><strong>The market splits capture from memory.</strong> Excellent local capture tools exist (VoiceInk, superwhisper-class dictation apps) with no recall; the best capture+recall product (Voicenotes) is cloud-only and publicly criticized for weak search (synonym misses, no boolean/tag scoping, related-notes breaking on long notes). Nobody ships local capture <em>plus</em> real recall.</li>
+    <li><strong>Local recall has a convergent pattern.</strong> SQLite FTS5 (precision) + sqlite-vec (semantic recall) + Reciprocal Rank Fusion — "no server, single file" — is independently recommended by multiple credible sources.</li>
+    <li><strong>The model landscape churns fast.</strong> Parakeet TDT v3 beats Whisper large-v3 on accuracy at half the size; Voxtral (Apache 2.0) hits 2.1% WER; Moonshine targets streaming at ~6× smaller; on Apple Silicon the frontier is shifting to CoreML/ANE (FluidAudio ~110× realtime), which is Swift-first — a real tension with a Python backend.</li>
+    <li><strong>Known reliability gap.</strong> Whisper-family models hallucinate on silence/noise (~1% of transcripts, looping phrases); mitigations are VAD segmentation (WhisperX-style) or anti-hallucination-trained models (Parakeet).</li>
+    <li><strong>Structural cautionary tale.</strong> Rewind AI pitched "your data never leaves your device," pivoted, was acquired by Meta (Dec 2025), and killed its Mac app with two weeks' export notice. For a personal memory tool, "local" is not enough — the data must outlive the app.</li>
+  </ul>
+  <p class="meta">Grounding notes: no institutional learnings corpus exists (greenfield); no user-supplied research artifacts; grounding = the brief + fresh web research below.</p>
+
+  <h3>Sources &amp; References</h3>
+  <ul class="src">
+    <li><a href="https://github.com/pluja/whishper">Whishper</a> — local web-UI transcription suite (closest architectural prior art)</li>
+    <li><a href="https://github.com/speaches-ai/speaches">Speaches</a> — OpenAI-compatible local STT/TTS server</li>
+    <li><a href="https://github.com/beingpax/VoiceInk">VoiceInk</a> — macOS hotkey dictation, whisper.cpp/Parakeet</li>
+    <li><a href="https://github.com/OpenWhispr/openwhispr">OpenWhispr</a> &amp; <a href="https://github.com/altic-dev/FluidVoice">FluidVoice</a> — open local dictation apps</li>
+    <li><a href="https://github.com/bahodirr/hyprnote">Hyprnote</a> / <a href="https://github.com/fastrepl/anarlog">anarlog</a> — local-first AI meeting notepad</li>
+    <li><a href="https://nerdymomocat.github.io/posts/voicenotes-hitting-half-of-the-right-notes/">Voicenotes critique</a> — documented search/recall failures</li>
+    <li><a href="https://www.audiopen.ai/">AudioPen</a> — voice→prose rewrite (capture-only)</li>
+    <li><a href="https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html">sqlite-vec hybrid search</a> &amp; <a href="https://github.com/asg017/sqlite-vec">sqlite-vec</a> — FTS5+vector+RRF pattern</li>
+    <li><a href="https://github.com/screenpipe/screenpipe">Screenpipe</a> — open, fully-local capture→index→NL-recall loop</li>
+    <li><a href="https://www.granola.ai/blog/chat-with-meetings-search-analyze-ai-2026">Granola</a> — AI text visually attributed + linked to source timestamps</li>
+    <li><a href="https://github.com/nikdanilov/whisper-obsidian-plugin">Obsidian Whisper plugin</a> — voice→markdown + local-LLM post-process</li>
+    <li><a href="https://kyutai.org/stt/">Kyutai STT</a> &amp; <a href="https://github.com/kyutai-labs/unmute">Unmute</a> — streaming STT; local voice-agent stack</li>
+    <li><a href="https://mistral.ai/news/voxtral/">Voxtral</a> — Apache-2.0 STT, 2.1% WER</li>
+    <li><a href="https://github.com/moonshine-ai/moonshine">Moonshine</a> &amp; <a href="https://arxiv.org/abs/2410.15608">paper</a> — small streaming STT</li>
+    <li><a href="https://spokenly.app/blog/parakeet-vs-whisper">Parakeet vs Whisper</a> — accuracy/speed comparison</li>
+    <li><a href="https://northflank.com/blog/best-open-source-speech-to-text-stt-model-in-2026-benchmarks">Open-source STT 2026 survey</a></li>
+    <li><a href="https://www.promptquorum.com/power-local-llm/local-whisper-stt-comparison-2026">Mac local Whisper comparison 2026</a></li>
+    <li><a href="https://github.com/anvanvan/mac-whisper-speedtest">mac-whisper-speedtest</a> — Apple Silicon engine head-to-head</li>
+    <li><a href="https://github.com/FluidInference/FluidAudio">FluidAudio</a> &amp; <a href="https://github.com/moona3k/macparakeet">macparakeet</a> — CoreML/ANE engines</li>
+    <li><a href="https://spokenly.app/blog/wispr-flow-vs-superwhisper-vs-macwhisper">Dictation app market comparison</a></li>
+    <li><a href="https://rewind.ai/what-happened-to-rewind/">What happened to Rewind</a> &amp; <a href="https://9to5mac.com/2025/12/05/rewind-limitless-meta-acquisition/">9to5Mac coverage</a></li>
+    <li><a href="https://dev.to/nareshipme/whisper-hallucination-on-silence-why-your-transcript-loops-the-same-phrase-2pg4">Whisper hallucination on silence</a></li>
+  </ul>
+</section>
+
+<section id="topic-axes">
+  <h2>Topic Axes</h2>
+  <ul>
+    <li><strong>capture-flow</strong> — how a voice note gets recorded: invocation surface, streaming vs post-hoc, session shape, the on-demand lifecycle.</li>
+    <li><strong>transcription-engine</strong> — local model choice and pipeline: accuracy/latency/footprint, Apple Silicon acceleration, hallucination mitigation, timestamps.</li>
+    <li><strong>enrichment-structure</strong> — what raw transcripts become: cleanup, titles, summaries, tags, traceability back to audio.</li>
+    <li><strong>recall-retrieval</strong> — the "refer to" experience: hybrid search, browsing, threads, related notes, resurfacing.</li>
+    <li><strong>architecture-form-factor</strong> — backend/UI shape, storage, service lifecycle, portability, durability.</li>
+  </ul>
+</section>
+
+<section id="ranked-ideas">
+  <h2>Ranked Ideas</h2>
+  <p>Seven survivors from 48 raw ideas. Ideas 1–5 are the high-confidence backbone; 6–7 are the differentiating bets. Every basis survived an independent adversarial verification pass.</p>
+  <ul class="jump">
+    <li><a href="#idea-1">1. The archive outlives the app</a></li>
+    <li><a href="#idea-2">2. Split the lifecycle: capture sliver + reading room</a></li>
+    <li><a href="#idea-3">3. The consolidation heartbeat</a></li>
+    <li><a href="#idea-4">4. Search you can see</a></li>
+    <li><a href="#idea-5">5. Receipts all the way down</a></li>
+    <li><a href="#idea-6">6. Threads, not a feed</a></li>
+    <li><a href="#idea-7">7. Corrections compound</a></li>
+  </ul>
+
+  <article class="card" id="idea-1">
+    <div class="idea-h"><span class="rank">1</span><h3>The archive outlives the app</h3></div>
+    <div class="chips">
+      <span class="chip axis">architecture-form-factor</span>
+      <span class="chip external">basis: external</span>
+      <span class="chip">confidence 90%</span>
+      <span class="chip">complexity Medium</span>
+    </div>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Make the data plane app-independent and re-derivable. Ground truth is a plain folder: one directory per note holding the original audio (immutable, content-addressed) and a human-readable Markdown transcript with YAML frontmatter carrying generous capture metadata (timezone-aware timestamp, trigger, duration, links). SQLite — FTS5 + sqlite-vec — is a <em>derived, rebuildable index</em>, never the source of truth; <code>rebuild-index</code> regenerates the whole recall layer from the folder. Every derived artifact (transcript, embedding, tags, summary) is stamped with the model, version, and parameters that produced it, and a first-class <code>re-derive</code> command batch re-transcribes and re-embeds the corpus when a better local model ships — with a diff review before the index rebuild. Park the folder in any synced location (iCloud Drive, Dropbox, git) and backup/export cease to exist as features: the native format is the export. Optionally enforce the local-only promise structurally by denying the runtime outbound network access, so egress fails loudly instead of creeping in through a dependency.</dd>
+      <dt>Basis</dt>
+      <dd><div class="basis-block external"><span class="btag">external:</span> Rewind AI's entire pitch was "your data never leaves your device"; it pivoted, was acquired by Meta (Dec 2025), and killed its Mac app with two weeks' export notice — the research digest calls this structurally decisive for personal local-first tools. FTS5 + sqlite-vec + RRF is the convergent "no server, single file" local pattern (sqlite-vec author, Simon Willison, sqlite.ai independently). Model churn is documented: Voxtral at 2.1% WER, Parakeet TDT v3 beating Whisper large-v3 at half the size, Apple Silicon engine rankings "moving fast."</div></dd>
+      <dt>Rationale</dt>
+      <dd>For a personal memory tool, the corpus is the asset and the app is disposable tooling around it. Audio is the only non-depreciating artifact — any transcript derived today is the worst it will ever be — so the archive should <em>appreciate</em> as models improve rather than fossilize at 2026 quality. This single decision de-risks every other idea in this set: features can be rebuilt; the data never has to be.</dd>
+      <dt>Downsides</dt>
+      <dd>Write-path discipline costs complexity (folder + markdown mirror + index kept consistent). Lossless audio grows storage, though deliberate on-demand notes stay small. The re-derive flow needs diff-review UX to be trustworthy. Egress-deny packaging (sandbox profile) adds friction and can wait for a later phase.</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 760 215" role="img" aria-label="Ground-truth folder deriving a rebuildable index, with re-derive epochs">
+        <g font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+        <rect x="24" y="30" width="300" height="118" rx="10" fill="#eef0fb" stroke="#6470c4"/>
+        <text x="40" y="54" font-size="13" font-weight="700" fill="#39418f">Ground truth — a plain folder</text>
+        <rect x="40" y="66" width="268" height="30" rx="6" fill="#ffffff" stroke="#aab2e2"/>
+        <text x="52" y="86" font-size="12" fill="#333a44">note-2026-07-06a/ audio.flac (immutable)</text>
+        <rect x="40" y="104" width="268" height="30" rx="6" fill="#ffffff" stroke="#aab2e2"/>
+        <text x="52" y="124" font-size="12" fill="#333a44">note.md — transcript + rich metadata</text>
+        <rect x="436" y="30" width="300" height="118" rx="10" fill="#e3f2ef" stroke="#2e8b7f"/>
+        <text x="452" y="54" font-size="13" font-weight="700" fill="#0b5d53">Derived — rebuildable, never canonical</text>
+        <rect x="452" y="66" width="268" height="30" rx="6" fill="#ffffff" stroke="#8fc7be"/>
+        <text x="464" y="86" font-size="12" fill="#333a44">SQLite index — FTS5 + vectors</text>
+        <rect x="452" y="104" width="268" height="30" rx="6" fill="#ffffff" stroke="#8fc7be"/>
+        <text x="464" y="124" font-size="12" fill="#333a44">summaries · tags (model + version stamped)</text>
+        <line x1="328" y1="89" x2="428" y2="89" stroke="#5c6470" stroke-width="1.6"/>
+        <polygon points="428,89 419,84 419,94" fill="#5c6470"/>
+        <text x="378" y="76" font-size="11.5" fill="#5c6470" text-anchor="middle">derive · re-derive</text>
+        <text x="24" y="176" font-size="11.5" fill="#5c6470">lives in any synced folder — the format is the export</text>
+        <text x="24" y="200" font-size="11.5" fill="#5c6470">better model ships → re-derive the corpus (diffed epochs) → the archive appreciates</text>
+        </g>
+      </svg>
+      <figcaption>Illustrative: the folder is canonical; everything queryable is a disposable derivation of it.</figcaption>
+    </figure>
+  </article>
+
+  <article class="card" id="idea-2">
+    <div class="idea-h"><span class="rank">2</span><h3>Split the lifecycle: an armed capture sliver + an ephemeral reading room</h3></div>
+    <div class="chips">
+      <span class="chip axis">architecture-form-factor</span>
+      <span class="chip external">basis: external</span>
+      <span class="chip direct">+ direct</span>
+      <span class="chip">confidence 80%</span>
+      <span class="chip">complexity High</span>
+    </div>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>One core, two lifecycles, everything behind a contract. A Python core (FastAPI-class) owns capture and recall logic behind a stable local API with an explicit on-demand lifecycle; the TypeScript web UI is just its <em>first client</em> — the reading room that boots on demand and dies on close. Capture gets its own surface: a minimal resident trigger (menu bar / global hotkey) keeping a small STT model warm so keypress→recording feels instant and never requires a browser tab. Below the core, STT engines are swappable sidecar processes behind an OpenAI-compatible transcription contract — whisper.cpp or MLX on day one, a Swift FluidAudio CoreML/ANE sidecar when the speed matters — with a built-in <code>bench</code> command that races installed engines on your own recorded voice to pick defaults.</dd>
+      <dt>Basis</dt>
+      <dd><div class="basis-block external"><span class="btag">external:</span> VoiceInk (3.7k★) proves the system-wide-hotkey ergonomic and is "capture-excellent, recall-absent"; Whishper proves the Python-backend + web-UI shape but stays browser-bound. The digest's Apple Silicon head-to-head — fluidaudio-coreml 0.19s &lt; parakeet-mlx 0.50s &lt; mlx-whisper 1.02s &lt; whisper.cpp 1.23s, with the frontier "shifting toward CoreML/ANE… Swift-first, not Python-first" — is the one piece of evidence that cuts against a pure-Python engine; a sidecar contract dissolves that tension without giving up the Python backend.</div>
+      <div class="basis-block direct"><span class="btag">direct:</span> the brief names two separate on-demand moments — "used on demand to capture notes through voice" and "recall through a nice system that can be used on demand and when needed" — and hedges the frontend ("potentially where needed… TypeScript"), signalling surfaces will vary.</div></dd>
+      <dt>Rationale</dt>
+      <dd>"Zero-friction capture" and "nice web UI" pull in opposite directions if forced into one process — a browser tab you must open is where fleeting thoughts die. Splitting lets each half be excellent at its one job, and the API-first core makes every future surface (CLI, phone-as-mic PWA over the LAN, chat client) an additive thin client. The engine contract turns the fastest-moving layer of the stack into a config change and settles the Python-vs-ANE tension in one explicit decision instead of five implicit ones.</dd>
+      <dt>Downsides</dt>
+      <dd>The most complex survivor — three deliverables (sliver, core, web UI) even in minimal form. Engine-sidecar indirection is overhead if you only ever run whisper.cpp. An optional RAM-only pre-roll buffer (catching the sentence spoken while reaching for the hotkey) stretches "on demand" further — if built at all, it must be opt-in with a visible never-persisted indicator.</dd>
+    </dl>
+    <div class="callout"><span class="ctag">Named fork — decide explicitly</span><br>
+    The resident sliver deliberately relaxes strict "nothing resident." The alternative is the pure appliance: one <code>stt</code> command cold-boots core + UI, the model lazy-loads on first record, and nothing survives closing the tab — maximally calm, but first capture is slower. Both are honest readings of "on demand." A staged path works: start pure-appliance, add the sliver only when capture latency actually annoys.</div>
+    <figure>
+      <svg viewBox="0 0 760 268" role="img" aria-label="Capture sliver and reading room as clients of one local core with swappable engine sidecars">
+        <g font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+        <rect x="30" y="26" width="220" height="66" rx="10" fill="#fdf1e0" stroke="#c98a2b"/>
+        <text x="46" y="50" font-size="13" font-weight="700" fill="#8a5a10">Capture sliver</text>
+        <text x="46" y="70" font-size="11.5" fill="#5c6470">resident · hotkey · warm small model</text>
+        <rect x="510" y="26" width="220" height="66" rx="10" fill="#f1efeb" stroke="#a8a29e"/>
+        <text x="526" y="50" font-size="13" font-weight="700" fill="#454b54">Reading room (web UI)</text>
+        <text x="526" y="70" font-size="11.5" fill="#5c6470">boots on demand · dies on close</text>
+        <rect x="272" y="128" width="216" height="62" rx="10" fill="#e3f2ef" stroke="#2e8b7f"/>
+        <text x="288" y="152" font-size="13" font-weight="700" fill="#0b5d53">Local core — Python API</text>
+        <text x="288" y="172" font-size="11.5" fill="#5c6470">on-demand lifecycle · stable contract</text>
+        <line x1="160" y1="92" x2="300" y2="128" stroke="#5c6470" stroke-width="1.6"/>
+        <polygon points="300,128 289,126 293,117" fill="#5c6470"/>
+        <text x="196" y="116" font-size="11.5" fill="#5c6470">audio in</text>
+        <line x1="600" y1="92" x2="462" y2="128" stroke="#5c6470" stroke-width="1.6"/>
+        <polygon points="462,128 469,117 473,126" fill="#5c6470"/>
+        <text x="540" y="116" font-size="11.5" fill="#5c6470">queries</text>
+        <line x1="380" y1="190" x2="380" y2="214" stroke="#5c6470" stroke-width="1.6"/>
+        <polygon points="380,214 375,205 385,205" fill="#5c6470"/>
+        <rect x="132" y="216" width="150" height="40" rx="8" fill="#ffffff" stroke="#a8a29e"/>
+        <text x="207" y="240" font-size="11.5" fill="#333a44" text-anchor="middle">whisper.cpp / MLX</text>
+        <rect x="304" y="216" width="152" height="40" rx="8" fill="#ffffff" stroke="#a8a29e"/>
+        <text x="380" y="240" font-size="11.5" fill="#333a44" text-anchor="middle">CoreML · ANE sidecar</text>
+        <rect x="478" y="216" width="150" height="40" rx="8" fill="#ffffff" stroke="#a8a29e"/>
+        <text x="553" y="240" font-size="11.5" fill="#333a44" text-anchor="middle">future engines</text>
+        <text x="646" y="240" font-size="11.5" fill="#5c6470">← swappable, self-benched</text>
+        </g>
+      </svg>
+      <figcaption>Illustrative: two lifecycles, one contract-shaped core; engines swap beneath it.</figcaption>
+    </figure>
+  </article>
+
+  <article class="card" id="idea-3">
+    <div class="idea-h"><span class="rank">3</span><h3>The consolidation heartbeat: draft instantly, deepen at the seams</h3></div>
+    <div class="chips">
+      <span class="chip axis">transcription-engine</span>
+      <span class="chip reasoned">basis: reasoned</span>
+      <span class="chip external">+ external</span>
+      <span class="chip">confidence 85%</span>
+      <span class="chip">complexity Medium</span>
+    </div>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>A two-phase pipeline modeled on memory consolidation. At capture, a small fast model (Moonshine / distil-whisper class) puts a readable draft on screen at speaking speed. Everything heavy runs later as one <em>consolidation pass</em> at the natural seams of on-demand use — session end, next app open, an optional idle window: heavyweight re-transcription (large-v3 / Parakeet / Voxtral class) with VAD segmentation and a hallucination sweep, embeddings, auto-title/tags/summary, related-note linking ("you said something different about this in March"), and personal-lexicon application. Each note visibly shows its state (draft → consolidated), so the system is honest about which quality tier you're reading.</dd>
+      <dt>Basis</dt>
+      <dd><div class="basis-block reasoned"><span class="btag">reasoned:</span> instant capture and expensive integration cannot share the same moment — and an on-demand tool has no daemon schedule to lean on, so heavy compute must attach to moments the user already initiates (capturing, opening). Splitting draft from consolidation is the only architecture that keeps capture instant <em>and</em> archive quality high under those two constraints.</div>
+      <div class="basis-block external"><span class="btag">external:</span> the digest supplies both tiers — Moonshine matches large-v3 English at ~6× smaller; distil-whisper gives ~99% of large-v3 quality at ~6× speed; Parakeet's anti-hallucination training and WhisperX-style VAD address the documented ~1% silence-hallucination failure.</div></dd>
+      <dt>Rationale</dt>
+      <dd>Dissolves the fast-vs-accurate model debate by refusing the premise (both, staged), turns the on-demand constraint into the design's rhythm rather than its limitation, and gives the other survivors — re-derive epochs, recall-on-write, lexicon application — one natural place in the runtime to live.</dd>
+      <dt>Downsides</dt>
+      <dd>Two models on disk (a few GB). Notes exist briefly in draft state, so search may run on draft text until consolidation lands. The pass must be background and interruptible — it can never block the user — and draft→final text changes need non-jarring presentation (receipts from idea 5 help).</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 760 176" role="img" aria-label="Timeline: instant draft at capture, consolidation pass at the next seam of use">
+        <g font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+        <line x1="40" y1="118" x2="716" y2="118" stroke="#a8a29e" stroke-width="2"/>
+        <polygon points="716,118 706,113 706,123" fill="#a8a29e"/>
+        <circle cx="150" cy="118" r="7" fill="#c98a2b"/>
+        <rect x="64" y="34" width="172" height="52" rx="9" fill="#fdf1e0" stroke="#c98a2b"/>
+        <text x="150" y="56" font-size="12.5" font-weight="700" fill="#8a5a10" text-anchor="middle">capture</text>
+        <text x="150" y="74" font-size="11.5" fill="#5c6470" text-anchor="middle">instant draft — small model</text>
+        <line x1="150" y1="86" x2="150" y2="109" stroke="#c98a2b" stroke-width="1.4"/>
+        <circle cx="500" cy="118" r="7" fill="#2e8b7f"/>
+        <rect x="352" y="22" width="296" height="64" rx="9" fill="#e3f2ef" stroke="#2e8b7f"/>
+        <text x="500" y="44" font-size="12.5" font-weight="700" fill="#0b5d53" text-anchor="middle">consolidation pass — next open / idle</text>
+        <text x="500" y="61" font-size="11" fill="#5c6470" text-anchor="middle">heavy re-transcribe · VAD + hallucination sweep · embed</text>
+        <text x="500" y="76" font-size="11" fill="#5c6470" text-anchor="middle">title/tags/summary · link related notes · apply lexicon</text>
+        <line x1="500" y1="86" x2="500" y2="109" stroke="#2e8b7f" stroke-width="1.4"/>
+        <text x="150" y="148" font-size="11.5" fill="#5c6470" text-anchor="middle">the moment of thought</text>
+        <text x="500" y="148" font-size="11.5" fill="#5c6470" text-anchor="middle">the seams of on-demand use</text>
+        </g>
+      </svg>
+      <figcaption>Illustrative: capture never waits on quality; quality never degrades capture.</figcaption>
+    </figure>
+  </article>
+
+  <article class="card" id="idea-4">
+    <div class="idea-h"><span class="rank">4</span><h3>Search you can see: exact, semantic, fused — never a black box</h3></div>
+    <div class="chips">
+      <span class="chip axis">recall-retrieval</span>
+      <span class="chip external">basis: external</span>
+      <span class="chip">confidence 90%</span>
+      <span class="chip">complexity Medium</span>
+    </div>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Build recall on SQLite FTS5 (exact, boolean, tag-scoped) plus sqlite-vec (chunk-level semantic similarity with local embeddings — BGE-M3 / EmbeddingGemma class) fused via Reciprocal Rank Fusion — and make the retrieval mode a visible, one-keystroke toggle (<em>exact / semantic / fused</em>) rather than one opaque blended box. Every result explains why it matched (term hit vs semantic neighbor). Embeddings carry model provenance so upgrading the embedder is a background re-embed job, not a redesign.</dd>
+      <dt>Basis</dt>
+      <dd><div class="basis-block external"><span class="btag">external:</span> three independent sources converge on FTS5-for-precision + vector-for-recall + RRF as the standard embeddable local pattern ("no server, single file"). The closest commercial analog (Voicenotes) was publicly criticized for exactly the failures this design dodges: keyword search missing synonyms ("headache" vs "migraine"), no boolean or tag-scoped queries, and cosine-similarity related-notes breaking on long notes — gaps the digest calls consistently requested and consistently missing across incumbents.</div></dd>
+      <dt>Rationale</dt>
+      <dd>This is the most concretely documented pain in the researched landscape, and the fix is a well-converged single-file pattern — the cheapest place for this system to be decisively better than every incumbent from day one, and the layer the brief's "that I can refer to" ultimately rests on.</dd>
+      <dt>Downsides</dt>
+      <dd>Hybrid tuning (RRF weights, chunk size) needs light evaluation discipline. Three visible modes cost UI polish — the "nice UI" bar applies. The embedding pass adds time to consolidation (idea 3 gives it a home).</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 760 178" role="img" aria-label="Three visible retrieval modes converging on results that explain their match">
+        <g font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+        <rect x="40" y="24" width="200" height="52" rx="9" fill="#ffffff" stroke="#a8a29e"/>
+        <text x="140" y="46" font-size="12.5" font-weight="700" fill="#333a44" text-anchor="middle">Exact — FTS5</text>
+        <text x="140" y="64" font-size="11" fill="#5c6470" text-anchor="middle">boolean · tag-scoped</text>
+        <rect x="280" y="24" width="200" height="52" rx="9" fill="#ffffff" stroke="#a8a29e"/>
+        <text x="380" y="46" font-size="12.5" font-weight="700" fill="#333a44" text-anchor="middle">Semantic — sqlite-vec</text>
+        <text x="380" y="64" font-size="11" fill="#5c6470" text-anchor="middle">chunk-level embeddings</text>
+        <rect x="520" y="24" width="200" height="52" rx="9" fill="#e3f2ef" stroke="#2e8b7f"/>
+        <text x="620" y="46" font-size="12.5" font-weight="700" fill="#0b5d53" text-anchor="middle">Fused — RRF</text>
+        <text x="620" y="64" font-size="11" fill="#5c6470" text-anchor="middle">precision + recall merged</text>
+        <line x1="140" y1="76" x2="352" y2="120" stroke="#5c6470" stroke-width="1.4"/>
+        <line x1="380" y1="76" x2="380" y2="120" stroke="#5c6470" stroke-width="1.4"/>
+        <line x1="620" y1="76" x2="408" y2="120" stroke="#5c6470" stroke-width="1.4"/>
+        <polygon points="380,124 373,113 387,113" fill="#5c6470"/>
+        <rect x="230" y="124" width="300" height="38" rx="9" fill="#f1efeb" stroke="#a8a29e"/>
+        <text x="380" y="147" font-size="12" fill="#333a44" text-anchor="middle">results — each shows why it matched</text>
+        <text x="558" y="147" font-size="11" fill="#5c6470">← mode: one keystroke</text>
+        </g>
+      </svg>
+      <figcaption>Illustrative: three legible instruments, one visible toggle — honest at 100 notes, essential at 100,000.</figcaption>
+    </figure>
+  </article>
+
+  <article class="card" id="idea-5">
+    <div class="idea-h"><span class="rank">5</span><h3>Receipts all the way down: layered transcripts you can always audit</h3></div>
+    <div class="chips">
+      <span class="chip axis">enrichment-structure</span>
+      <span class="chip external">basis: external</span>
+      <span class="chip">confidence 85%</span>
+      <span class="chip">complexity Medium</span>
+    </div>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Store every note as attributed layers over immutable ground truth: raw ASR output (with per-span confidence), local-LLM cleanup, and human edits — plus derived artifacts (title, summary, action items, tags) as versioned annotations that each point to the exact transcript span and audio timestamps they came from. The UI consequences: a blame toggle on any span ("who wrote this — the model, the LLM, or me?"); AI-generated text always visually distinct and clickable back to the seconds of speech behind it; low-confidence or hallucination-suspect spans rendered honestly instead of with unearned authority. This layering is also what makes a prose-first reading experience safe: the default view can be a cleaned, journal-like rendering — verbatim and audio sit one click beneath.</dd>
+      <dt>Basis</dt>
+      <dd><div class="basis-block external"><span class="btag">external:</span> Granola's trust pattern — AI-added text visually distinguished and hyperlinked to the transcript timestamp it came from — is named in the digest as the portable pattern for trustworthy recall. Whisper-family hallucination (~1% of transcripts, looping phrases) makes uniform, unattributed text actively dangerous in a memory system. AudioPen's popularity proves people prefer the prose rewrite of their rambling — but nobody pairs that legibility with durable, auditable recall.</div></dd>
+      <dt>Rationale</dt>
+      <dd>Recall is only valuable if you believe what you re-read. Months later, the summary may be the only thing you look at — "did I actually say that?" must be answerable in one click, with the audio as the court of appeal. Layered provenance is a schema decision that cannot be retrofitted onto flat text, which is why it ranks above bolder features: it has to be right early.</dd>
+      <dt>Downsides</dt>
+      <dd>Real schema and write-path complexity (spans, layers, annotation versions). Tight receipts need word-level alignment (WhisperX-class). The UI needs restraint so layers inform rather than clutter — blame is a toggle, not the default view.</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 760 208" role="img" aria-label="Attributed layers over immutable audio, with a derived summary linking back to its source span">
+        <g font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+        <rect x="40" y="22" width="300" height="34" rx="7" fill="#fdf1e0" stroke="#c98a2b"/>
+        <text x="56" y="44" font-size="12" fill="#8a5a10">your edits — attributed, reversible</text>
+        <rect x="40" y="62" width="300" height="34" rx="7" fill="#ece5fb" stroke="#8b6cc9"/>
+        <text x="56" y="84" font-size="12" fill="#5b3aa0">LLM cleanup — visually distinct</text>
+        <rect x="40" y="102" width="300" height="34" rx="7" fill="#f1efeb" stroke="#a8a29e"/>
+        <text x="56" y="124" font-size="12" fill="#454b54">raw ASR — per-span confidence</text>
+        <rect x="460" y="40" width="260" height="56" rx="9" fill="#ffffff" stroke="#6470c4"/>
+        <text x="476" y="62" font-size="11.5" font-weight="700" fill="#39418f">derived: summary line</text>
+        <text x="476" y="82" font-size="11.5" fill="#333a44">"Call landlord about deposit"</text>
+        <rect x="40" y="152" width="680" height="32" rx="7" fill="#eef0fb" stroke="#6470c4"/>
+        <text x="56" y="172" font-size="12" fill="#39418f">audio — immutable spans</text>
+        <rect x="560" y="152" width="88" height="32" rx="7" fill="#c7cdf0" stroke="#6470c4"/>
+        <text x="604" y="172" font-size="11" fill="#2c3376" text-anchor="middle">0:42–0:58</text>
+        <line x1="600" y1="96" x2="604" y2="148" stroke="#6470c4" stroke-width="1.6"/>
+        <polygon points="604,150 598,141 609,141" fill="#6470c4"/>
+        <text x="626" y="122" font-size="11.5" fill="#5c6470">receipt: click → hear the source</text>
+        </g>
+      </svg>
+      <figcaption>Illustrative: every layer and every derived claim stays traceable to the audio that justifies it.</figcaption>
+    </figure>
+  </article>
+
+  <article class="card" id="idea-6">
+    <div class="idea-h"><span class="rank">6</span><h3>Threads, not a feed: chunks are the atoms, topics are the documents</h3></div>
+    <div class="chips">
+      <span class="chip axis">recall-retrieval</span>
+      <span class="chip reasoned">basis: reasoned</span>
+      <span class="chip external">+ external</span>
+      <span class="chip">confidence 70%</span>
+      <span class="chip">complexity High</span>
+    </div>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Borrow medicine's problem-oriented record (Weed's POMR). The storage atom is the topic-coherent <em>chunk</em> — VAD plus local-LLM topic-shift segmentation of each recording, with per-chunk audio spans, confidence, and embeddings — and recordings are just containers. The home surface is a <em>problem list</em>: a persistent, user-confirmed registry of ongoing threads (projects, people, decisions, open questions). Consolidation indexes each new chunk against the registry; opening a thread assembles everything you've ever said about it, chronologically, each span linked to its source audio. A rambling ten-minute session feeds three threads instead of poisoning one embedding.</dd>
+      <dt>Basis</dt>
+      <dd><div class="basis-block reasoned"><span class="btag">reasoned:</span> clinicians faced structurally identical conditions — episodic voice-dictated captures accumulating for years, queried later by concern, never by date — and the problem-oriented record has been the standard answer for ~50 years. The query shape transfers exactly: "what did I decide about the renovation," never "what did I say on May 3." A small user-confirmed registry is a controlled vocabulary — the thing incumbents keep shipping without.</div>
+      <div class="basis-block external"><span class="btag">external:</span> note-level cosine-similarity "breaks on long or bilingual notes" is named in the research as a category-wide unresolved gap, and chunk-level indexing is the documented direction; auto-tagging and tag-scoped queries are "consistently requested and consistently missing."</div></dd>
+      <dt>Rationale</dt>
+      <dd>The brief's "that I can refer to" gets answered structurally: browse-first recall that compounds with every capture, instead of a retrieval gamble against a reverse-chronological feed. This is the recall paradigm bet — the survivor that would most change what the product <em>is</em>.</dd>
+      <dt>Downsides</dt>
+      <dd>The boldest bet in the set: topic-segmentation quality gates everything (bad splits are worse than none); registry upkeep is a small ongoing chore and must stay optional; the thread UI is real product work; and the pattern is unproven at personal (vs clinical) volume — hence the lowest confidence in the set. Ship search (idea 4) first; grow threads on top.</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 760 216" role="img" aria-label="Recordings segmented into topic chunks regrouped into per-topic threads">
+        <g font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+        <text x="40" y="34" font-size="11.5" fill="#5c6470">recording — Mon</text>
+        <rect x="40" y="42" width="100" height="26" fill="#8fc7be" stroke="#2e8b7f"/>
+        <rect x="140" y="42" width="80" height="26" fill="#aab2e2" stroke="#6470c4"/>
+        <rect x="220" y="42" width="80" height="26" fill="#8fc7be" stroke="#2e8b7f"/>
+        <text x="40" y="98" font-size="11.5" fill="#5c6470">recording — Thu</text>
+        <rect x="40" y="106" width="80" height="26" fill="#aab2e2" stroke="#6470c4"/>
+        <rect x="120" y="106" width="100" height="26" fill="#f2c98a" stroke="#c98a2b"/>
+        <rect x="220" y="106" width="80" height="26" fill="#8fc7be" stroke="#2e8b7f"/>
+        <line x1="316" y1="88" x2="396" y2="88" stroke="#5c6470" stroke-width="2"/>
+        <polygon points="396,88 386,83 386,93" fill="#5c6470"/>
+        <text x="356" y="74" font-size="11.5" fill="#5c6470" text-anchor="middle">regrouped</text>
+        <text x="430" y="34" font-size="11.5" font-weight="700" fill="#0b5d53">kitchen reno</text>
+        <rect x="430" y="42" width="90" height="22" fill="#8fc7be" stroke="#2e8b7f"/>
+        <rect x="430" y="68" width="90" height="22" fill="#8fc7be" stroke="#2e8b7f"/>
+        <rect x="430" y="94" width="90" height="22" fill="#8fc7be" stroke="#2e8b7f"/>
+        <text x="548" y="34" font-size="11.5" font-weight="700" fill="#39418f">job search</text>
+        <rect x="548" y="42" width="90" height="22" fill="#aab2e2" stroke="#6470c4"/>
+        <rect x="548" y="68" width="90" height="22" fill="#aab2e2" stroke="#6470c4"/>
+        <text x="666" y="34" font-size="11.5" font-weight="700" fill="#8a5a10">gift ideas</text>
+        <rect x="666" y="42" width="70" height="22" fill="#f2c98a" stroke="#c98a2b"/>
+        <text x="430" y="146" font-size="11.5" fill="#5c6470">threads assemble chronologically, each span linked to its audio</text>
+        <text x="40" y="186" font-size="11.5" fill="#5c6470">one rambling session contributes to three threads — instead of becoming one unfindable note</text>
+        </g>
+      </svg>
+      <figcaption>Illustrative: containers → topic chunks → living thread documents.</figcaption>
+    </figure>
+  </article>
+
+  <article class="card" id="idea-7">
+    <div class="idea-h"><span class="rank">7</span><h3>Corrections compound: fix it by saying it again — once</h3></div>
+    <div class="chips">
+      <span class="chip axis">capture-flow</span>
+      <span class="chip reasoned">basis: reasoned</span>
+      <span class="chip">confidence 75%</span>
+      <span class="chip">complexity Medium</span>
+    </div>
+    <dl class="fields">
+      <dt>Description</dt>
+      <dd>Make error repair voice-native, and make every repair permanent knowledge. Punch-in correction, borrowed from music production: select a botched span and re-speak it; the engine re-transcribes just that span conditioned on the surrounding accepted text and your personal lexicon, and prior takes are kept (comping — a correction never destroys what was actually said). Every accepted fix immediately patches the transcript <em>and</em> its search-index entries, and is mined into a personal lexicon of your proper nouns, projects, and jargon — injected into future cleanup passes, offered retroactively as suggested fixes across the archive, and used by the engine <code>bench</code> to measure accuracy on your voice specifically. Fix "Shuaib" once; it stops being mangled everywhere, forever.</dd>
+      <dt>Basis</dt>
+      <dd><div class="basis-block reasoned"><span class="btag">reasoned:</span> a single-user corpus has a small, stable set of recurring rare tokens — names, projects, domain terms — which is exactly where ASR errors concentrate (even the best local models run ~6% word error rate per the research). An uncorrected error is not cosmetic: it silently removes that note from being findable by its own correct terms, breaking the system's core promise for precisely the note it occurs in. And keyboard-only correction re-introduces, at the exact moment of failure, the typing friction voice was chosen to eliminate.</div></dd>
+      <dt>Rationale</dt>
+      <dd>No tool in the researched landscape offers per-user adaptation. This converts the most annoying chore in any STT tool into the mechanism that makes this one the most accurate STT system in existence for a single person: you.</dd>
+      <dt>Downsides</dt>
+      <dd>Span-targeted re-transcription with clean alignment is fiddly engineering. Lexicon application must suggest, never silently rewrite (the receipts from idea 5 make this safe). Voice-targeting a span ("fix the part about…") is a stretch goal — click-to-select is the honest v1.</dd>
+    </dl>
+    <figure>
+      <svg viewBox="0 0 760 158" role="img" aria-label="Correction loop: mishear, re-speak, store and patch, lexicon grows, future notes improve">
+        <g font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+        <rect x="30" y="42" width="150" height="46" rx="9" fill="#f1efeb" stroke="#a8a29e"/>
+        <text x="105" y="62" font-size="12" fill="#454b54" text-anchor="middle">mishear:</text>
+        <text x="105" y="78" font-size="12" fill="#454b54" text-anchor="middle">"Shwab"</text>
+        <line x1="180" y1="65" x2="212" y2="65" stroke="#5c6470" stroke-width="1.6"/>
+        <polygon points="212,65 203,60 203,70" fill="#5c6470"/>
+        <rect x="214" y="42" width="160" height="46" rx="9" fill="#fdf1e0" stroke="#c98a2b"/>
+        <text x="294" y="62" font-size="12" fill="#8a5a10" text-anchor="middle">re-speak the span</text>
+        <text x="294" y="78" font-size="11" fill="#8a5a10" text-anchor="middle">(punch-in, takes kept)</text>
+        <line x1="374" y1="65" x2="406" y2="65" stroke="#5c6470" stroke-width="1.6"/>
+        <polygon points="406,65 397,60 397,70" fill="#5c6470"/>
+        <rect x="408" y="42" width="170" height="46" rx="9" fill="#e3f2ef" stroke="#2e8b7f"/>
+        <text x="493" y="62" font-size="12" fill="#0b5d53" text-anchor="middle">correction stored +</text>
+        <text x="493" y="78" font-size="12" fill="#0b5d53" text-anchor="middle">indexes patched</text>
+        <line x1="578" y1="65" x2="610" y2="65" stroke="#5c6470" stroke-width="1.6"/>
+        <polygon points="610,65 601,60 601,70" fill="#5c6470"/>
+        <rect x="612" y="42" width="122" height="46" rx="9" fill="#eef0fb" stroke="#6470c4"/>
+        <text x="673" y="62" font-size="12" fill="#39418f" text-anchor="middle">personal</text>
+        <text x="673" y="78" font-size="12" fill="#39418f" text-anchor="middle">lexicon grows</text>
+        <path d="M 673 88 L 673 122 L 105 122 L 105 92" fill="none" stroke="#6470c4" stroke-width="1.6"/>
+        <polygon points="105,90 100,99 110,99" fill="#6470c4"/>
+        <text x="389" y="140" font-size="11.5" fill="#5c6470" text-anchor="middle">future notes + the whole archive get it right — and the bench measures accuracy on your voice</text>
+        </g>
+      </svg>
+      <figcaption>Illustrative: the repair loop that turns a chore into a compounding personal accuracy advantage.</figcaption>
+    </figure>
+  </article>
+</section>
+
+<section id="rejection-summary">
+  <h2>Rejection Summary</h2>
+  <p>All 28 merged candidates were verified independently; the 21 non-survivors below were either merged into a stronger survivor (their substance is preserved) or cut with a reason. All five topic axes have survivors — no coverage gaps.</p>
+  <table>
+    <thead><tr><th>#</th><th>Candidate</th><th>Outcome</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Shoot RAW: the appreciating archive</td><td>Merged into idea 1 (re-derive epochs with diff review).</td></tr>
+      <tr><td>2</td><td>Warm-standby capture trigger</td><td>Merged into idea 2 (the capture sliver's latency requirement).</td></tr>
+      <tr><td>3</td><td>Sleep-consolidation two-pass transcription</td><td>Became idea 3 (core).</td></tr>
+      <tr><td>4</td><td>Capture escapes the browser / tray + browser split</td><td>Merged into idea 2 (split lifecycle).</td></tr>
+      <tr><td>5</td><td>One gesture in, silence out (VAD auto-stop, pre-roll)</td><td>Merged into idea 2; RAM pre-roll flagged by verification as stretching "on-demand" — opt-in only.</td></tr>
+      <tr><td>6</td><td>Zero-resident appliance ("boots like a tool, dies like a tab")</td><td>Preserved inside idea 2 as the named opposing fork of the lifecycle decision — not silently dropped.</td></tr>
+      <tr><td>7</td><td>API-first local core / stable retrieval contract</td><td>Merged into idea 2 (the core's contract).</td></tr>
+      <tr><td>8</td><td>Engine-as-contract + CoreML/ANE sidecar ("the Python tax")</td><td>Merged into idea 2 (engine sidecars + self-bench).</td></tr>
+      <tr><td>9</td><td>Hallucination defense (VAD sweep + honest confidence)</td><td>Merged into ideas 3 (pipeline sweep) and 5 (honest rendering).</td></tr>
+      <tr><td>10</td><td>Notes title and tag themselves</td><td>Merged into idea 3 (consolidation outputs).</td></tr>
+      <tr><td>11</td><td>Recall-on-write: every new note answers back</td><td>Merged into idea 3 (related-note linking at consolidation).</td></tr>
+      <tr><td>12</td><td>Segments as the atomic storage unit</td><td>Merged into idea 6; the Whishper-v4 support claim was dropped after verification (its segmentation is speaker-level, not topic-level).</td></tr>
+      <tr><td>13</td><td>Every summary points home / git blame for your words / annotations over immutable base</td><td>Merged into idea 5 (receipts + layers).</td></tr>
+      <tr><td>14</td><td>Read-layer inversion (prose-default reading)</td><td>Merged into idea 5 (made safe by layering).</td></tr>
+      <tr><td>15</td><td>Fix it once, find it forever / personal lexicon</td><td>Merged into idea 7.</td></tr>
+      <tr><td>16</td><td>"Your voice, your model" personal bench loop</td><td>Merged into ideas 7 and 2 (bench on your own voice).</td></tr>
+      <tr><td>17</td><td>The database is the backup / LOCKSS estate / rich capture metadata</td><td>Merged into idea 1 (synced-folder placement, portable formats, generous frontmatter).</td></tr>
+      <tr><td>18</td><td>Local isn't a promise, it's a firewall rule</td><td>Folded into idea 1's trust posture (optional egress-deny enforcement).</td></tr>
+      <tr><td>19</td><td>Ask, don't search / one microphone, two verbs (voice Q&amp;A + TTS)</td><td>Cut: strongest deferred feature — heavy local LLM + TTS chain; idea 2's retrieval contract keeps the door open. Revisit as its own brainstorm once the substrate exists.</td></tr>
+      <tr><td>20</td><td>Parse the note into typed speech acts (commitments, questions)</td><td>Cut: verification found the external basis overreaches (the documented gap is tag/boolean search, not speech-act extraction); compelling but downstream of ideas 3 and 6.</td></tr>
+      <tr><td>21</td><td>Spaced resurfacing deck (Anki-style, grading = routing)</td><td>Cut: sound reasoning, but speculative expected value before a real corpus exists; a lighter resurfacing lands via idea 3's recall-on-write.</td></tr>
+      <tr><td>22</td><td>Emergent corpus taxonomy (clustered auto-tags)</td><td>Cut: needs a corpus to cluster; per-note auto-tags ship in idea 3; revisit when the archive is large.</td></tr>
+      <tr><td>23</td><td>The phone is the mic (LAN PWA capture)</td><td>Cut: v1 scope expansion; becomes an additive client of idea 2's API core later.</td></tr>
+      <tr><td>24</td><td>The trust stack (positioning synthesis)</td><td>Dissolved: a framing that spans ideas 1 and 5, not a distinct buildable move.</td></tr>
+      <tr><td>25</td><td>Confidence-flagged transcript rendering</td><td>Merged into idea 5 (honest confidence display).</td></tr>
+      <tr><td>26</td><td>Session topic-splitting (one session, many notes)</td><td>Merged into idea 6 (topic-shift chunking is its mechanism).</td></tr>
+      <tr><td>27</td><td>Hybrid index from note one (versioned embeddings)</td><td>Merged into idea 4.</td></tr>
+      <tr><td>28</td><td>Voice-native undo ("scratch that")</td><td>Merged into idea 7 (punch-in mechanics).</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer class="composition-signal">Composed 2026-07-06 by ce-ideate (compound-engineering) · run 5f06a439 · source: user's greenfield brief (no repository) · grounding: fresh web research, 2026-07-06 · verification: independent basis-verifier pass, 0 refuted</footer>
+
+</div>
+</body>
+</html>
