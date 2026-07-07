@@ -198,7 +198,7 @@ Quiet and tactile: soft radii, generous hit areas, gentle feedback. Controls sho
 - **Danger confirm:** paper fill, Danger text and border — appears only inside a two-step confirm, never as a resting state.
 
 ### Chips (status)
-- **Style:** pill (999px), 0.75rem lowercase text, tinted background with matching darker border and deep text of the same hue; separate tint sets per scheme (all triads in Colors §Semantic). Borders are shared across schemes.
+- **Style:** pill (999px), 0.75rem lowercase text, tinted background with matching darker border and deep text of the same hue; separate tint sets per scheme (all triads in Colors Semantic). Borders are shared across schemes.
 - **State:** exactly three: processing (amber), failed (red), done (green). A chip is a fact, not a control.
 
 ### Cards / Containers
