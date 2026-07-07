@@ -73,8 +73,9 @@ simplifications), and `ce-code-review` (11 reviewers; 4 real P2s + several P3s f
   note-open title focus, theme, format, dropzone tests.
 - Live smoke on `:8477`: `GET /api/notes` → 200 (was the race 500), traversal id → 405, health OK,
   served shell references the rebuilt bundle.
-- Evidence screenshots under `docs/evidence/` (redesign light/dark, delete/undo, focus ring, search
-  snippets, and the `critique3/` set behind the 36/40 score).
+- Design-critique evidence under `docs/evidence/critique3/` (the assessment set behind the 36/40
+  score). Walking-skeleton acceptance shots under `docs/evidence/` are indexed from
+  `docs/portability-checklist.md`. (The interim `redesign-*.png` snapshots were dropped as noise.)
 
 ## Deliberate non-fixes (do not "fix" these without cause)
 
