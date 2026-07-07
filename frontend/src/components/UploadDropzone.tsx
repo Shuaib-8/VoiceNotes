@@ -18,6 +18,7 @@ interface UploadDropzoneProps {
 
 export default function UploadDropzone({ onIngested }: UploadDropzoneProps): ReactElement {
   const [state, setState] = useState<DropzoneState>({ phase: 'idle' })
+  const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const ingest = async (files: FileList | File[]): Promise<void> => {
@@ -51,13 +52,27 @@ export default function UploadDropzone({ onIngested }: UploadDropzoneProps): Rea
 
   const onDrop = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault()
+    setDragOver(false)
     void ingest(event.dataTransfer.files)
+  }
+
+  const onDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    setDragOver(true)
+  }
+
+  const onDragLeave = (event: DragEvent<HTMLDivElement>): void => {
+    // Entering a child fires dragleave too; only a true exit dims the surface.
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
+      return
+    setDragOver(false)
   }
 
   return (
     <div
-      className="dropzone"
-      onDragOver={(event) => event.preventDefault()}
+      className={dragOver ? 'dropzone drag-over' : 'dropzone'}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDrop={onDrop}
       data-testid="dropzone"
     >
@@ -68,7 +83,9 @@ export default function UploadDropzone({ onIngested }: UploadDropzoneProps): Rea
           <button type="button" className="secondary" onClick={() => inputRef.current?.click()}>
             Upload a voice note
           </button>
-          <span className="dropzone-hint">or drag one file here (.m4a, .opus, …)</span>
+          <span className="dropzone-hint">
+            {dragOver ? 'Drop to add it to the archive' : 'or drag one file here (.m4a, .opus, …)'}
+          </span>
         </>
       )}
       {state.phase === 'error' && (

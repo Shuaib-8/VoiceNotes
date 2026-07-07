@@ -321,3 +321,108 @@ def test_empty_transcript_note_completes_with_timestamp_title(
     assert detail["transcript"] == ""
     assert isinstance(detail["title"], str)
     assert detail["title"][:4].isdigit()  # capture-timestamp fallback, not a blank card
+
+
+def test_search_results_carry_the_matched_line(
+    make_client: ClientFactory, fixtures_dir: Path
+) -> None:
+    blob = (fixtures_dir / "spoken.m4a").read_bytes()
+    long_text = (
+        "This morning I promised to call the landlord about the broken boiler, "
+        "and afterwards pick up the dry cleaning before the shop closes."
+    )
+    client = make_client(FakeTranscriber(text=long_text))
+    note_id = client.post("/api/notes", files={"file": ("kettle.m4a", blob, "audio/mp4")}).json()[
+        "id"
+    ]
+    wait_for_status(client, note_id, "done")
+
+    matched = client.get("/api/search", params={"q": "BOILER"}).json()
+    assert len(matched) == 1
+    snippet = matched[0]["match_snippet"]
+    assert snippet is not None
+    assert "boiler" in snippet
+    assert snippet.startswith("…") and snippet.endswith("…")  # windowed, not the whole note
+
+    # A folder-name-only match has no line to show.
+    by_name = client.get("/api/search", params={"q": "kettle"}).json()
+    assert len(by_name) == 1
+    assert by_name[0]["match_snippet"] is None
+
+
+# --- Delete: trash, never erase ---
+
+
+def test_delete_moves_note_to_trash_and_out_of_the_app(
+    make_client: ClientFactory, fixtures_dir: Path, tmp_path: Path
+) -> None:
+    original = (fixtures_dir / "spoken.m4a").read_bytes()
+    client = make_client(FakeTranscriber())
+    note_id = client.post("/api/notes", files={"file": ("memo.m4a", original, "audio/mp4")}).json()[
+        "id"
+    ]
+    wait_for_status(client, note_id, "done")
+
+    response = client.delete(f"/api/notes/{note_id}")
+
+    assert response.status_code == 204
+    assert client.get(f"/api/notes/{note_id}").status_code == 404
+    assert note_id not in [n["id"] for n in client.get("/api/notes").json()]
+    trashed = tmp_path / "archive" / ".trash" / note_id
+    assert (trashed / "note.md").is_file()
+    assert (trashed / "audio.m4a").read_bytes() == original  # nothing is ever lost
+
+
+def test_delete_blocked_while_transcribing(make_client: ClientFactory, fixtures_dir: Path) -> None:
+    blob = (fixtures_dir / "spoken.m4a").read_bytes()
+    client = make_client(FakeTranscriber(delay_seconds=1.0))
+    note_id = client.post("/api/notes", files={"file": ("m.m4a", blob, "audio/mp4")}).json()["id"]
+
+    blocked = client.delete(f"/api/notes/{note_id}")
+    assert blocked.status_code == 409
+
+    wait_for_status(client, note_id, "done")
+    assert client.delete(f"/api/notes/{note_id}").status_code == 204
+
+
+def test_delete_unknown_note_is_404(make_client: ClientFactory) -> None:
+    client = make_client(FakeTranscriber())
+    assert client.delete("/api/notes/2026-01-01-000000-mic").status_code == 404
+
+
+def test_restore_undoes_a_delete(
+    make_client: ClientFactory, fixtures_dir: Path, tmp_path: Path
+) -> None:
+    original = (fixtures_dir / "spoken.m4a").read_bytes()
+    client = make_client(FakeTranscriber())
+    note_id = client.post("/api/notes", files={"file": ("memo.m4a", original, "audio/mp4")}).json()[
+        "id"
+    ]
+    wait_for_status(client, note_id, "done")
+    assert client.delete(f"/api/notes/{note_id}").status_code == 204
+
+    response = client.post(f"/api/notes/{note_id}/restore")
+
+    assert response.status_code == 204
+    assert note_id in [n["id"] for n in client.get("/api/notes").json()]
+    assert not (tmp_path / "archive" / ".trash" / note_id).exists()
+    restored = tmp_path / "archive" / note_id
+    assert (restored / "audio.m4a").read_bytes() == original  # byte-for-byte round trip
+
+
+def test_restore_with_nothing_in_trash_is_404(make_client: ClientFactory) -> None:
+    client = make_client(FakeTranscriber())
+    assert client.post("/api/notes/2026-01-01-000000-mic/restore").status_code == 404
+
+
+def test_failed_note_can_be_deleted(
+    make_client: ClientFactory, fixtures_dir: Path, tmp_path: Path
+) -> None:
+    blob = (fixtures_dir / "spoken.m4a").read_bytes()
+    client = make_client(FakeTranscriber(fail_with="engine exploded"))
+    note_id = client.post("/api/notes", files={"file": ("f.m4a", blob, "audio/mp4")}).json()["id"]
+    wait_for_status(client, note_id, "failed")
+
+    assert client.delete(f"/api/notes/{note_id}").status_code == 204
+    assert (tmp_path / "archive" / ".trash" / note_id / "audio.m4a").is_file()
+    assert note_id not in [n["id"] for n in client.get("/api/notes").json()]
