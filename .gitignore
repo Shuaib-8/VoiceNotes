@@ -22,3 +22,7 @@ frontend/dist/
 
 # impeccable
 .impeccable/
+
+# claude 
+.claude/
+.claude/worktrees/
