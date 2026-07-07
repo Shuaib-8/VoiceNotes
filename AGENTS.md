@@ -72,4 +72,5 @@ The keyboard map (`R` record/stop, `/` search, `Esc` step-out) lives in `App.tsx
   - The ruff `--fix` hook strips a not-yet-used import between edits: when adding an import + its first use, **edit the usage first and add the import last** (batch both, import edit last).
 - TypeScript: explicit return types; `const` assertions.
 - Descriptive names, composition over inheritance, type the boundaries.
+- Documented solutions to past problems live in `docs/solutions/` (by category, with YAML frontmatter: `module`, `tags`, `problem_type`); shared domain vocabulary lives in `CONCEPTS.md`. Both are relevant when implementing or debugging in a documented area.
 - Commit/push only when asked; branch first if on `main`.
