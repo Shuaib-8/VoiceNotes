@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { uploadMicBlob } from '../api'
+import { formatDuration } from '../format'
 
 type RecorderState =
   | { phase: 'idle' }
@@ -19,22 +20,23 @@ function pickMimeType(): string | null {
 }
 
 function formatElapsed(startedAt: number, now: number): string {
-  const total = Math.max(0, Math.floor((now - startedAt) / 1000))
-  const minutes = Math.floor(total / 60)
-  const seconds = total % 60
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  return formatDuration(Math.max(0, Math.floor((now - startedAt) / 1000)))
 }
 
 interface RecorderProps {
   onIngested: (noteId: string) => void
 }
 
+const CANCEL_CONFIRM_AFTER_MS = 10_000
+
 export default function Recorder({ onIngested }: RecorderProps): ReactElement {
   const [state, setState] = useState<RecorderState>({ phase: 'idle' })
   const [now, setNow] = useState<number>(() => Date.now())
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const cancellingRef = useRef<boolean>(false)
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
 
   const guarding = state.phase === 'recording' || state.phase === 'send-failed'
   useEffect(() => {
@@ -100,18 +102,32 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
     recorderRef.current = recorder
     recorder.start(1000)
     setNow(Date.now())
+    setConfirmingCancel(false)
     setState({ phase: 'recording', startedAt: Date.now() })
   }, [send])
 
   const stopRecording = useCallback((): void => {
     cancellingRef.current = false
+    setConfirmingCancel(false)
     recorderRef.current?.stop()
   }, [])
 
   const cancelRecording = useCallback((): void => {
     cancellingRef.current = true
+    setConfirmingCancel(false)
     recorderRef.current?.stop()
   }, [])
+
+  const requestCancel = useCallback((): void => {
+    if (state.phase !== 'recording') return
+    // A short false start discards silently (R17); a real take is worth a confirm —
+    // Cancel destroys the only copy there is.
+    if (Date.now() - state.startedAt >= CANCEL_CONFIRM_AFTER_MS) {
+      setConfirmingCancel(true)
+    } else {
+      cancelRecording()
+    }
+  }, [state, cancelRecording])
 
   if (state.phase === 'unsupported') {
     return <p className="recorder-message">This browser cannot record audio — use Chrome, or upload a file instead.</p>
@@ -159,23 +175,69 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
   if (state.phase === 'recording') {
     return (
       <div className="recorder recording">
+        <span role="status" className="visually-hidden">
+          Recording
+        </span>
         <span className="recording-dot" aria-hidden="true" />
-        <span className="elapsed" role="timer">
+        <span className="elapsed" role="timer" aria-label="Recording time">
           {formatElapsed(state.startedAt, now)}
         </span>
-        <button type="button" className="primary" onClick={stopRecording}>
-          Stop
-        </button>
-        <button type="button" className="secondary" onClick={cancelRecording}>
-          Cancel
-        </button>
+        {confirmingCancel ? (
+          <span className="delete-confirm" role="group" aria-label="Confirm discard">
+            <span>Discard this recording?</span>
+            <button type="button" className="confirm-trash" onClick={cancelRecording}>
+              Discard
+            </button>
+            <button
+              type="button"
+              autoFocus
+              className="confirm-keep"
+              onClick={() => {
+                setConfirmingCancel(false)
+                requestAnimationFrame(() => cancelButtonRef.current?.focus())
+              }}
+            >
+              Keep recording
+            </button>
+          </span>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="primary stop-button"
+              aria-keyshortcuts="r"
+              title="Stop (R)"
+              onClick={stopRecording}
+            >
+              Stop
+            </button>
+            {/* Kept away from Stop: one misclick here would destroy the only copy. */}
+            <button
+              type="button"
+              ref={cancelButtonRef}
+              className="cancel-button"
+              onClick={requestCancel}
+            >
+              Cancel
+            </button>
+          </>
+        )}
       </div>
     )
   }
   return (
     <div className="recorder">
-      <button type="button" className="primary record-button" onClick={() => void startRecording()}>
-        ● Record
+      <button
+        type="button"
+        className="primary record-button"
+        aria-keyshortcuts="r"
+        title="Record (R)"
+        onClick={() => void startRecording()}
+      >
+        <span className="record-glyph" aria-hidden="true">
+          ●{' '}
+        </span>
+        Record
       </button>
     </div>
   )

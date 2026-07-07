@@ -40,6 +40,20 @@ test('a multi-file drop is rejected whole — nothing uploads', async () => {
   expect(calls).toHaveLength(0)
 })
 
+test('holding a file over the zone lights it up and invites the drop', () => {
+  stubFetch(() => jsonResponse({}))
+  render(<UploadDropzone onIngested={vi.fn()} />)
+
+  const zone = screen.getByTestId('dropzone')
+  fireEvent.dragOver(zone, { dataTransfer: { files: [] } })
+  expect(zone).toHaveClass('drag-over')
+  expect(screen.getByText(/drop to add it to the archive/i)).toBeInTheDocument()
+
+  fireEvent.dragLeave(zone)
+  expect(zone).not.toHaveClass('drag-over')
+  expect(screen.getByText(/drag one file here/i)).toBeInTheDocument()
+})
+
 test('a server rejection surfaces its message inline', async () => {
   stubFetch(() => jsonResponse({ detail: 'stream exceeded 200 MB' }, 413))
   render(<UploadDropzone onIngested={vi.fn()} />)

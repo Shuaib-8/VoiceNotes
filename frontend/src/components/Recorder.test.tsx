@@ -80,3 +80,26 @@ test('a failed send retains the blob and retry-send re-posts it — no silent lo
   expect(second.type).toBe(first.type)
   expect(second.size).toBe(first.size)
 })
+
+test('cancelling a long take asks for confirmation before discarding', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch(() => jsonResponse({ id: 'n3', status: 'processing' }, 201))
+  render(<Recorder onIngested={vi.fn()} />)
+
+  await userEvent.click(screen.getByRole('button', { name: /record/i }))
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+
+  await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+  expect(screen.getByText(/discard this recording\?/i)).toBeInTheDocument()
+
+  // Keep recording: the take survives the reflex-click.
+  await userEvent.click(screen.getByRole('button', { name: /keep recording/i }))
+  expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+  await userEvent.click(screen.getByRole('button', { name: /^discard$/i }))
+  expect(calls).toHaveLength(0) // R17: discarded entirely — no request
+  expect(await screen.findByRole('button', { name: /record/i })).toBeInTheDocument()
+  nowSpy.mockRestore()
+})
