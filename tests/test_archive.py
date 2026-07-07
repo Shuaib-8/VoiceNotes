@@ -13,8 +13,10 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+
 from voice_notes.archive import (
     NOTE_FILENAME,
+    TRASH_DIRNAME,
     NoteAlreadyCompleteError,
     NoteFrontmatter,
     NoteState,
@@ -23,14 +25,15 @@ from voice_notes.archive import (
     compose_note_md,
     load_note,
     parse_note_md,
+    restore_note_folder,
     sanitize_source_tag,
     scan_archive,
     search_notes,
     sweep_transfer_garbage,
     temp_path_for,
+    trash_note_folder,
     write_note_md,
 )
-
 from voice_notes.config import ensure_archive_root, resolve_archive_root
 
 LOCAL_TZ = timezone(timedelta(hours=1))
@@ -303,3 +306,131 @@ def test_note_folder_contains_only_canonical_files(tmp_path: Path) -> None:
     folder = make_complete_note(tmp_path, "canonical shape")
     names = sorted(p.name for p in folder.iterdir())
     assert names == ["audio.webm", NOTE_FILENAME]
+
+
+# --- Delete is trash, never erase ---
+
+
+def test_trash_note_folder_moves_folder_intact(tmp_path: Path) -> None:
+    folder = make_complete_note(tmp_path, "note to remove")
+    audio_bytes = (folder / "audio.webm").read_bytes()
+
+    destination = trash_note_folder(tmp_path, folder.name)
+
+    assert not folder.exists()
+    assert destination == tmp_path / TRASH_DIRNAME / folder.name
+    assert (destination / "audio.webm").read_bytes() == audio_bytes
+    assert (destination / NOTE_FILENAME).is_file()
+
+
+def test_trash_collision_keeps_both_copies(tmp_path: Path) -> None:
+    folder = make_complete_note(tmp_path, "first delete")
+    name = folder.name
+    first = trash_note_folder(tmp_path, name)
+
+    rebuilt = tmp_path / name
+    rebuilt.mkdir()
+    (rebuilt / "audio.webm").write_bytes(b"second copy")
+    second = trash_note_folder(tmp_path, name)
+
+    assert first.is_dir()
+    assert second.is_dir()
+    assert second.name == f"{name}-2"
+
+
+def test_trash_rejects_unknown_and_foreign_names(tmp_path: Path) -> None:
+    with pytest.raises(KeyError):
+        trash_note_folder(tmp_path, "2026-07-06-101112-mic")  # nothing on disk
+
+    foreign = tmp_path / ".obsidian"
+    foreign.mkdir()
+    with pytest.raises(KeyError):
+        trash_note_folder(tmp_path, ".obsidian")  # not a note folder
+    with pytest.raises(KeyError):
+        trash_note_folder(tmp_path, "../outside")  # never leaves the archive
+    assert foreign.is_dir()
+
+
+def test_trashed_notes_leave_scan_and_survive_sweep(tmp_path: Path) -> None:
+    folder = make_complete_note(tmp_path, "goes to trash")
+    trash_note_folder(tmp_path, folder.name)
+
+    assert scan_archive(tmp_path) == []
+    assert sweep_transfer_garbage(tmp_path) == []
+    assert (tmp_path / TRASH_DIRNAME / folder.name).is_dir()
+
+
+def test_restore_brings_a_trashed_note_back_intact(tmp_path: Path) -> None:
+    folder = make_complete_note(tmp_path, "second thoughts")
+    audio_bytes = (folder / "audio.webm").read_bytes()
+    trash_note_folder(tmp_path, folder.name)
+
+    restored = restore_note_folder(tmp_path, folder.name)
+
+    assert restored == folder
+    assert (restored / "audio.webm").read_bytes() == audio_bytes
+    assert not (tmp_path / TRASH_DIRNAME / folder.name).exists()
+    assert len(scan_archive(tmp_path)) == 1  # visible to the app again
+
+
+def test_restore_rejects_unknown_and_foreign_names(tmp_path: Path) -> None:
+    with pytest.raises(KeyError):
+        restore_note_folder(tmp_path, "2026-07-06-101112-mic")  # nothing in trash
+    with pytest.raises(KeyError):
+        restore_note_folder(tmp_path, "../outside")  # never leaves the archive
+
+
+def test_restore_never_overwrites_a_live_note(tmp_path: Path) -> None:
+    folder = make_complete_note(tmp_path, "original")
+    name = folder.name
+    trash_note_folder(tmp_path, name)
+    rebuilt = tmp_path / name
+    rebuilt.mkdir()
+
+    with pytest.raises(FileExistsError):
+        restore_note_folder(tmp_path, name)
+    assert (tmp_path / TRASH_DIRNAME / name).is_dir()  # trash copy untouched
+
+
+def test_folder_pattern_refuses_path_separators(tmp_path: Path) -> None:
+    """The id pattern is the first guard against traversal: a separator must never match,
+    so a resolved note dir is always a single component under the archive (never ``a/../b``)."""
+    from voice_notes.archive import _NOTE_FOLDER_PATTERN
+
+    assert _NOTE_FOLDER_PATTERN.match("2026-07-06-101112-mic") is not None
+    assert _NOTE_FOLDER_PATTERN.match("2026-07-06-101112-my-upload-2") is not None
+    assert _NOTE_FOLDER_PATTERN.match("2026-07-06-101112-a/b") is None
+    assert _NOTE_FOLDER_PATTERN.match("2026-07-06-101112-a\\b") is None
+
+    # The rename endpoints reject a separator-bearing id outright, never touching disk.
+    with pytest.raises(KeyError):
+        trash_note_folder(tmp_path, "2026-07-06-101112-a/../evil")
+    with pytest.raises(KeyError):
+        restore_note_folder(tmp_path, "2026-07-06-101112-a/../evil")
+
+
+def test_scan_skips_a_folder_removed_mid_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent delete/restore renames a folder away between the directory listing and
+    the per-folder read; the scan skips the vanished entry instead of failing the listing."""
+    from voice_notes import archive
+
+    kept = make_complete_note(tmp_path, "still here", tag="kept")
+    make_complete_note(tmp_path, "being deleted", tag="racing")
+
+    real_classify = archive._classify
+    visited: list[str] = []
+
+    def flaky_classify(folder: Path) -> tuple[NoteState | None, str | None]:
+        visited.append(folder.name)
+        if folder.name.endswith("-racing"):
+            raise FileNotFoundError(folder)  # folder moved into .trash mid-scan
+        return real_classify(folder)
+
+    monkeypatch.setattr(archive, "_classify", flaky_classify)
+
+    notes = scan_archive(tmp_path)
+
+    assert [note.note_id for note in notes] == [kept.name]
+    assert len(visited) == 2  # both were visited; only the racing folder vanished

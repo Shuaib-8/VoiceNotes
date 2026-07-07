@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import mimetypes
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from voice_notes.archive import NoteAlreadyCompleteError
 from voice_notes.config import Settings, ensure_archive_root
 from voice_notes.ingest import (
+    DeleteNotAllowedError,
     FileTooLargeError,
     IngestService,
     NoteDetail,
@@ -44,7 +45,8 @@ def get_service(request: Request) -> IngestService:
 
 ServiceDep = Annotated[IngestService, Depends(get_service)]
 
-api_router = APIRouter(prefix="/api")
+API_PREFIX = "/api"
+api_router = APIRouter(prefix=API_PREFIX)
 
 
 @api_router.get("/health", response_model=HealthResponse)
@@ -116,6 +118,32 @@ async def retry_note(note_id: str, service: ServiceDep) -> NoteCreatedResponse:
     return NoteCreatedResponse(id=note_id)
 
 
+@api_router.delete("/notes/{note_id}", status_code=204)
+async def delete_note(note_id: str, service: ServiceDep) -> Response:
+    """Move a note to the archive's .trash — recoverable on disk, gone from the app."""
+    try:
+        await run_in_threadpool(service.delete, note_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=f"no note {note_id!r}") from error
+    except DeleteNotAllowedError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(status_code=204)
+
+
+@api_router.post("/notes/{note_id}/restore", status_code=204)
+async def restore_note(note_id: str, service: ServiceDep) -> Response:
+    """Undo a delete: move the note back out of the archive's .trash."""
+    try:
+        await run_in_threadpool(service.restore, note_id)
+    except KeyError as error:
+        raise HTTPException(
+            status_code=404, detail=f"nothing to restore for {note_id!r}"
+        ) from error
+    except FileExistsError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(status_code=204)
+
+
 @api_router.get("/search", response_model=list[NoteSummary])
 async def search(service: ServiceDep, q: str = "") -> list[NoteSummary]:
     return await run_in_threadpool(service.search, q)
@@ -146,6 +174,21 @@ def create_app(settings: Settings | None = None, transcriber: Transcriber | None
 
     app = FastAPI(title="voice-notes", lifespan=lifespan)
     app.include_router(api_router)
+
+    @app.middleware("http")
+    async def static_cache_policy(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        if request.url.path.startswith("/assets/"):
+            # Vite content-hashes these filenames: safe to cache forever.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif not request.url.path.startswith(f"{API_PREFIX}/"):
+            # index.html must revalidate on every load, or long-lived tabs resurrect
+            # retired UIs from the browser's heuristic cache (no header = cached).
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     if resolved.frontend_dist.is_dir():
         app.mount("/", StaticFiles(directory=resolved.frontend_dist, html=True), name="frontend")
     return app

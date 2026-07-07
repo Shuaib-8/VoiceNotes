@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import mimetypes
 import os
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from voice_notes.archive import (
     AUDIO_EXTENSIONS,
@@ -25,17 +26,20 @@ from voice_notes.archive import (
     NoteState,
     ScannedNote,
     allocate_note_folder,
+    normalize_query,
+    restore_note_folder,
     sanitize_source_tag,
     scan_archive,
     search_notes,
     sweep_transfer_garbage,
     temp_path_for,
+    trash_note_folder,
 )
 from voice_notes.archive import (
     write_note_md as archive_write_note_md,
 )
 from voice_notes.transcription import Transcriber, normalize_to_wav, wav_duration_seconds
-from voice_notes.worker import JobStatus, TranscriptionWorker
+from voice_notes.worker import JobRecord, JobStatus, TranscriptionWorker
 
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 STREAM_CHUNK_BYTES = 1024 * 1024
@@ -65,6 +69,10 @@ class RetryNotAllowedError(RuntimeError):
     """Retry is only valid for a failed, incomplete note."""
 
 
+class DeleteNotAllowedError(RuntimeError):
+    """Delete is blocked while the note is queued or transcribing."""
+
+
 NoteStatus = Literal["processing", "failed", "done"]
 
 
@@ -76,6 +84,10 @@ class NoteSummary(BaseModel):
     duration_seconds: float | None = None
     error: str | None = None
     has_audio: bool = False
+    match_snippet: str | None = Field(
+        default=None,
+        description="Set only on /api/search results: the transcript line the query matched.",
+    )
 
 
 class NoteDetail(NoteSummary):
@@ -91,11 +103,54 @@ def _supported_formats_message() -> str:
     return f"unsupported file type; accepted formats: {formats}"
 
 
+_SNIPPET_RADIUS = 45
+
+
+def _match_snippet(transcript: str, needle: str) -> str | None:
+    """The fragment around the first match — recall shows the line you half-remember.
+
+    Returns None when the query matched the folder name rather than the words.
+    """
+    if not needle:
+        return None
+    index = transcript.casefold().find(needle)
+    if index < 0:
+        return None
+    start = max(0, index - _SNIPPET_RADIUS)
+    end = min(len(transcript), index + len(needle) + _SNIPPET_RADIUS)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(transcript) else ""
+    return f"{prefix}{transcript[start:end].strip()}{suffix}"
+
+
+_TITLE_MAX = 80
+_TITLE_MIN_CLAUSE = 20  # "Ok." must not become a whole note's title
+
+
+def _clause_trim(line: str) -> str:
+    """Titles read like phrases: end at the first sentence, never cut mid-word.
+
+    The lookahead keeps decimals ("21.5 degrees") from ending a title early.
+    """
+    for match in re.finditer(r"[.!?](?=\s|$)", line[: _TITLE_MAX + 1]):
+        if match.start() >= _TITLE_MIN_CLAUSE:
+            return line[: match.start()]
+    if len(line) <= _TITLE_MAX:
+        return line
+    head = line[:_TITLE_MAX]
+    cut = max(head.rfind(char) for char in ",;:—")
+    if cut < _TITLE_MIN_CLAUSE:
+        cut = head.rfind(" ")
+    if cut < _TITLE_MIN_CLAUSE:
+        cut = _TITLE_MAX
+    return head[:cut].rstrip(" ,;:—") + "…"
+
+
 def _first_line_title(transcript: str, captured_at: datetime) -> str:
     for line in transcript.splitlines():
         stripped = line.strip()
         if stripped:
-            return stripped[:80]
+            return _clause_trim(stripped)
     return f"{captured_at:%Y-%m-%d %H:%M}"
 
 
@@ -216,6 +271,17 @@ class IngestService:
 
         self.worker.submit(folder.name, job)
 
+    @staticmethod
+    def _record_in_flight(record: JobRecord | None) -> bool:
+        """A job is in flight while it is queued or running — the one predicate that
+        defines 'processing' for both the guard rails and the status a note reports."""
+        return record is not None and record.status in (JobStatus.QUEUED, JobStatus.TRANSCRIBING)
+
+    def _in_flight(self, note_id: str) -> bool:
+        """True while the note's transcription job is queued or running — the window in
+        which retry and delete are both refused."""
+        return self._record_in_flight(self.worker.status_of(note_id))
+
     def retry(self, note_id: str) -> None:
         """Re-run transcription for a failed note; its note.md write is still a first write."""
         folder = self.archive_root / note_id
@@ -223,8 +289,7 @@ class IngestService:
             raise KeyError(note_id)
         if (folder / "note.md").exists():
             raise NoteAlreadyCompleteError(note_id)
-        record = self.worker.status_of(note_id)
-        if record is not None and record.status in (JobStatus.QUEUED, JobStatus.TRANSCRIBING):
+        if self._in_flight(note_id):
             raise RetryNotAllowedError(f"{note_id} is already being transcribed")
 
         scanned = next((n for n in scan_archive(self.archive_root) if n.note_id == note_id), None)
@@ -248,6 +313,18 @@ class IngestService:
             mime_type=mime_type,
         )
 
+    def delete(self, note_id: str) -> None:
+        """Move a note to the archive's .trash; blocked only while its job is in flight."""
+        if self._in_flight(note_id):
+            raise DeleteNotAllowedError(
+                f"{note_id} is still being transcribed; wait for it to finish"
+            )
+        trash_note_folder(self.archive_root, note_id)
+
+    def restore(self, note_id: str) -> None:
+        """Undo a delete: move the note back out of the archive's .trash."""
+        restore_note_folder(self.archive_root, note_id)
+
     def recover_at_startup(self) -> None:
         """Sweep transfer garbage; mark orphaned incomplete notes failed — visible, retryable."""
         sweep_transfer_garbage(self.archive_root)
@@ -261,7 +338,13 @@ class IngestService:
         return [self._summarize(note) for note in scan_archive(self.archive_root)]
 
     def search(self, query: str) -> list[NoteSummary]:
-        return [self._summarize(note) for note in search_notes(self.archive_root, query)]
+        needle = normalize_query(query)
+        results: list[NoteSummary] = []
+        for note in search_notes(self.archive_root, query):
+            summary = self._summarize(note)
+            summary.match_snippet = _match_snippet(note.transcript or "", needle)
+            results.append(summary)
+        return results
 
     def get_note(self, note_id: str) -> NoteDetail | None:
         scanned = next((n for n in scan_archive(self.archive_root) if n.note_id == note_id), None)
@@ -304,7 +387,7 @@ class IngestService:
             )
 
         record = self.worker.status_of(note.note_id)
-        live = record is not None and record.status in (JobStatus.QUEUED, JobStatus.TRANSCRIBING)
+        live = self._record_in_flight(record)
         captured_at = _captured_at_from_note_id(note.note_id)
         return NoteSummary(
             id=note.note_id,
