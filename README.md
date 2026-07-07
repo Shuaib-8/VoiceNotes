@@ -1,8 +1,8 @@
-# voice-notes
+# VoiceNotes
 
 Personal, local-first voice notes: record from the mic or upload a voice file (Apple Voice Memos `.m4a`, WhatsApp `.opus`, …), get a transcript within seconds from a **local** model, and keep every note as plain files — immutable original audio plus a markdown transcript — in an archive folder any modern notes tool can open. No cloud, no accounts, no database.
 
-**The archive outlives the app.** Each note is one folder holding the original audio byte-for-byte and a `note.md` (YAML frontmatter with full transcription provenance + transcript + audio embed). The archive opens directly as an Obsidian vault, imports into Notion, and reads in any editor. Delete the app and you lose nothing; better models later can re-transcribe the originals.
+**The archive outlives the app.** Each note is one folder holding the original audio byte-for-byte and a `note.md` (YAML frontmatter with full transcription provenance + transcript + audio embed). 
 
 ## Prerequisites
 
@@ -25,6 +25,15 @@ cd frontend && npm install && npm run build && cd ..
 uv run voice-notes
 ```
 
+If `uv run voice-notes` fails with `ModuleNotFoundError: No module named 'voice_notes'`
+on a project stored under iCloud-synced Desktop/Documents, clear macOS hidden flags from the
+virtualenv and retry:
+
+```bash
+chflags -R nohidden .venv
+uv run voice-notes
+```
+
 Open http://127.0.0.1:8477 in Chrome (the v1 target browser). Click **● Record**, speak, click **Stop** — the note lands transcribed, with zero keyboard.
 
 **First transcription only:** the local model (`mlx-community/whisper-large-v3-turbo`, ~1.6 GB) is downloaded once from Hugging Face. Everything after that — capture, transcription, browse, search — is fully offline.
@@ -44,8 +53,6 @@ A note folder looks like:
 ```
 
 Notes are write-once: the app never mutates a stored note. Failed transcriptions stay visible in the UI with a retry button; retrying writes the transcript for the first time.
-
-Known playback nuance: Obsidian does not play `.opus` embeds (WhatsApp uploads) — the transcript and metadata still carry the note, and this app's own UI plays them fine. Mic recordings (`.webm`) and Voice Memos (`.m4a`) play in Obsidian.
 
 ## Verifying the identity claims
 
