@@ -15,6 +15,7 @@ uv run pytest                             # backend suite — fast, fake engine 
 uv run pytest -m slow                     # real-engine integration + latency (first run downloads ~1.6 GB model)
 uv run ruff format --check . && uv run ruff check .
 uv run pyrefly check                      # types
+#   ^ from a git worktree this can match 0 files (false green); pass paths: uv run pyrefly check src tests
 
 cd frontend && npm test                   # UI tests (Vitest + Testing Library)
 cd frontend && npm run lint               # oxlint
@@ -56,13 +57,19 @@ Frontend `frontend/src/` — Vite + React 19 + TypeScript. `api.ts` (typed clien
 
 ## Design Context
 
-Frontend/UI work is governed by two root files (authored on the `worktree-frontend-optimisation` branch): `PRODUCT.md` — register: **product**; personality "warm, personal, archival"; five design principles (capture before chrome; the archive is the truth; recall ends in a paste; warmth without gloss; state is always honest) — and `DESIGN.md` — the visual system (North Star **"The Pocket Field Recorder"**: a monochrome instrument — Ink actions on paper/charcoal warmed toward the REC lamp's rose hue, flat hairline-bordered single 640px column, system-ui type; chroma reserved for state: the Record Red lamp/glyph, the three status-chip triads, and Danger; the starter violet was retired 2026-07-06). Read both before any UI change; `/impeccable` commands consume them automatically.
+Frontend/UI work is governed by two root files (authored on the `worktree-frontend-optimisation` branch): 
+
+- `PRODUCT.md` — register: **product**; personality "warm, personal, archival"; five design principles (capture before chrome; the archive is the truth; recall ends in a paste; warmth without gloss; state is always honest) 
+— `DESIGN.md` — the visual system (North Star **"The Pocket Field Recorder"**: a monochrome instrument — Ink actions on paper/charcoal warmed toward the REC lamp's rose hue, flat hairline-bordered single 640px column, system-ui type; chroma reserved for state: the Record Red lamp/glyph, the three status-chip triads, and Danger; the starter violet was retired 2026-07-06). Read both before any UI change; `/impeccable` commands consume them automatically.
 
 Two frontend invariants the components uphold (breaking them is silent, not loud): **Focus Doctrine** — focus is never allowed to drop to `<body>`; every note card carries `data-note-id` + `tabIndex={-1}` and openable ones add `data-note-open`, so `focusAfterPaint(...selectors)` can always land on a real target (opener → card fallback) after a route change, delete, or undo. **Delete is trash, never erase** — a delete is an `os.rename` into `<archive>/.trash/` (recoverable, 409 while transcribing), and its inline Undo is honest: an `'idle' | 'undoing' | 'failed'` status keeps the notice up and names the failure rather than claiming a note returned when `restore` failed.
+
+The keyboard map (`R` record/stop, `/` search, `Esc` step-out) lives in `App.tsx` + `Recorder.tsx` and is user-documented in the README's "Using it" section — change both together.
 
 ## Conventions
 
 - Python: fully type-annotated; Pydantic models over loose dicts; `uv` for everything. A PostToolUse hook auto-runs ruff + pyrefly on `.py` save — keep it green.
+  - The ruff `--fix` hook strips a not-yet-used import between edits: when adding an import + its first use, **edit the usage first and add the import last** (batch both, import edit last).
 - TypeScript: explicit return types; `const` assertions.
 - Descriptive names, composition over inheritance, type the boundaries.
 - Commit/push only when asked; branch first if on `main`.

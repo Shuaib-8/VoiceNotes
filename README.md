@@ -40,6 +40,22 @@ Open http://127.0.0.1:8477 in Chrome (the v1 target browser). Click **● Record
 
 **Measured on this machine (2026-07-06):** a 59-second note transcribes in **2.7 s**; a real 3-second memo lands as a complete note about 3 s after upload, cold start included. The success criterion is ~10 s for a one-minute note.
 
+## Using it
+
+Open http://127.0.0.1:8477 in your browser. Everything is one scrolling column — no menus, no router.
+
+**Capture** — click **● Record**, speak, click **Stop**; the note transcribes and appears at the top. Or drag a voice file onto the upload area (or click to pick one). Cancelling a longer take asks first, so you can't lose the only copy by a misclick.
+
+**Keyboard shortcuts** (ignored while you're typing in a field):
+
+| Key | Action |
+| --- | --- |
+| `R` | Start recording — press again to Stop |
+| `/` | Jump to the search box |
+| `Esc` | Step back: clear the search, then leave the field; or close an open note |
+
+**Navigation & actions** — click a note's title to open it; **← Back** (or `Esc`) returns to the list with your search and any in-progress recording intact. Each done note has one-click **Copy** (transcript to clipboard) and **Delete** (moves to the archive's `.trash` with an inline **Undo** — nothing is ever erased). Failed notes show **Retry**. The sun/moon toggle switches light/dark and otherwise follows your system.
+
 ## Where notes live
 
 `~/VoiceNotes` by default; override with the `VOICE_NOTES_ARCHIVE` environment variable. Point it at an existing archive and the app just works — the folder is self-describing, and moving it is a non-event (`tests/test_portability.py` proves it).
