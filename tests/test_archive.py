@@ -7,6 +7,7 @@ folder classification, and move-the-archive portability.
 
 from __future__ import annotations
 
+import re
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -103,6 +104,95 @@ def test_sanitize_source_tag() -> None:
     assert len(sanitize_source_tag("x" * 100)) <= 40
     assert sanitize_source_tag("???") == "upload"
     assert sanitize_source_tag("") == "upload"
+
+
+# --- Windows-legal folder names (AE6, R8) ---
+
+_WINDOWS_RESERVED_DEVICE_NAMES = frozenset(
+    {"con", "prn", "aux", "nul"}
+    | {f"com{digit}" for digit in range(1, 10)}
+    | {f"lpt{digit}" for digit in range(1, 10)}
+)
+
+
+def assert_windows_legal_note_folder_name(name: str) -> None:
+    """Strict test-local oracle: NTFS/FAT-legal charset behind the timestamp prefix,
+    no trailing dot/space/dash, no reserved device name, and the app's own pattern."""
+    from voice_notes.archive import _NOTE_FOLDER_PATTERN
+
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9-]+", name), name
+    assert not name.endswith((".", " ", "-")), name
+    assert name.casefold() not in _WINDOWS_RESERVED_DEVICE_NAMES, name
+    assert _NOTE_FOLDER_PATTERN.match(name), name
+
+
+WINDOWS_HOSTILE_STEMS = (
+    'meeting: notes "final" <v2>',  # : " < > are illegal in Windows filenames
+    "pipes|question?stars*",  # | ? *
+    "control\x00\x01\x1fchars\tand\nnewlines",  # control characters
+    "back\\slash/and/forward",  # both separator kinds
+    "trailing dots...",  # Windows strips trailing dots on create
+    "trailing spaces   ",  # ...and trailing spaces
+    " .mixed trailing junk. . ",
+)
+
+
+def test_windows_hostile_stems_produce_legal_folder_names(tmp_path: Path) -> None:
+    """Covers AE6/R8: every Windows-illegal character class, end-to-end through
+    sanitize_source_tag -> allocate_note_folder, lands on a legal non-empty name."""
+    for index, stem in enumerate(WINDOWS_HOSTILE_STEMS):
+        folder = allocate_note_folder(
+            tmp_path, CAPTURED_AT + timedelta(seconds=index), sanitize_source_tag(stem)
+        )
+        assert folder.is_dir()
+        assert_windows_legal_note_folder_name(folder.name)
+
+
+def test_all_symbol_stems_fall_back_to_a_neutral_tag(tmp_path: Path) -> None:
+    """A stem that sanitizes to nothing must not compose a name ending in '-' (which
+    Windows would take but the folder pattern refuses); the sanitizer's fallback tag
+    is the single generation choke point that prevents it."""
+    for index, stem in enumerate(("", "???", "***", "....", '\\/:*?"<>|')):
+        assert sanitize_source_tag(stem) == "upload"
+        folder = allocate_note_folder(
+            tmp_path, CAPTURED_AT + timedelta(seconds=index), sanitize_source_tag(stem)
+        )
+        assert_windows_legal_note_folder_name(folder.name)
+
+
+def test_long_stems_respect_the_tag_bound_and_stay_legal(tmp_path: Path) -> None:
+    from voice_notes.archive import _MAX_TAG_LENGTH
+
+    plain = sanitize_source_tag("x" * 100)
+    assert len(plain) == _MAX_TAG_LENGTH
+
+    # Truncation landing exactly on a dash must not leave a trailing dash behind.
+    dash_at_boundary = sanitize_source_tag("a" * (_MAX_TAG_LENGTH - 1) + " " + "b" * 20)
+    assert len(dash_at_boundary) <= _MAX_TAG_LENGTH
+    assert not dash_at_boundary.endswith("-")
+
+    for index, tag in enumerate((plain, dash_at_boundary)):
+        folder = allocate_note_folder(tmp_path, CAPTURED_AT + timedelta(seconds=index), tag)
+        assert_windows_legal_note_folder_name(folder.name)
+
+
+def test_same_second_collision_suffixes_stay_windows_legal(tmp_path: Path) -> None:
+    tag = sanitize_source_tag('meeting: "notes"')
+    names = [allocate_note_folder(tmp_path, CAPTURED_AT, tag).name for _ in range(3)]
+    assert len(set(names)) == 3
+    for name in names:
+        assert_windows_legal_note_folder_name(name)
+
+
+def test_reserved_device_stems_never_compose_a_reserved_name(tmp_path: Path) -> None:
+    """CON/NUL/COM1... are illegal as a whole filename on Windows (with or without an
+    extension); the timestamp prefix defeats them by construction — pin that."""
+    for index, stem in enumerate(("CON", "con.txt", "NUL", "PRN", "AUX", "COM1", "LPT9")):
+        folder = allocate_note_folder(
+            tmp_path, CAPTURED_AT + timedelta(seconds=index), sanitize_source_tag(stem)
+        )
+        assert folder.name.casefold() not in _WINDOWS_RESERVED_DEVICE_NAMES
+        assert_windows_legal_note_folder_name(folder.name)
 
 
 # --- Frontmatter (R8) ---

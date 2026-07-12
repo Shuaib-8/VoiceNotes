@@ -1,0 +1,4 @@
+# Test fixtures are byte-exact contracts (committed audio + a pre-built note
+# folder that every platform must read identically) — never eol-convert them,
+# even on Windows checkouts with autocrlf.
+tests/fixtures/** -text
