@@ -70,10 +70,6 @@ A note folder looks like:
 
 Notes are write-once: the app never mutates a stored note. Failed transcriptions stay visible in the UI with a retry button; retrying writes the transcript for the first time.
 
-## Verifying the identity claims
-
-`docs/portability-checklist.md` holds the one-time manual checks (Obsidian vault, Notion import, delete-the-app durability, the AE1 stopwatch) with a result log.
-
 ## Development
 
 ```bash
