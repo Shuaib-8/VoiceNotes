@@ -8,7 +8,7 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 The canonical, self-describing store of every note: a single folder (default `~/VoiceNotes`, relocatable) holding one subfolder per note. It is the source of truth and outlives the app — any notes tool can open it, and moving it is a non-event. Reads walk the folder directly rather than a database or index, so the folder contents *are* the state.
 
 ### Note
-The durable unit of capture: one folder holding the original audio byte-for-byte plus a `note.md` (the transcript with provenance frontmatter). A note is write-once — once complete it is never mutated in place; its final filename asserts its integrity.
+The durable unit of capture: one folder holding the original audio byte-for-byte plus a `note.md` (the transcript with provenance frontmatter). The provenance records the engine, model, and params that produced the transcript, so archives written by different engines or machines stay self-describing. A note is write-once — once complete it is never mutated in place; its final filename asserts its integrity.
 
 Lifecycle: a note is **Complete** once its transcript is written, and **Incomplete** while it holds audio but no transcript yet — an interrupted or failed transcription, which stays visible and retryable and is never silently re-run. It is never observable in a half-written state at its final name.
 
