@@ -124,7 +124,10 @@ class MlxWhisperTranscriber:
         )
 
     def _run_engine(self, waveform: np.ndarray) -> dict[str, object]:
-        import mlx_whisper  # heavy import deferred so fast paths never pay it
+        # Heavy import deferred so fast paths never pay it. The package is absent
+        # by design off Apple Silicon (platform marker), so the type-checker cannot
+        # resolve it on Windows/Linux lanes.
+        import mlx_whisper  # pyrefly: ignore[missing-import]
 
         result = mlx_whisper.transcribe(waveform, path_or_hf_repo=self._model_id)
         return dict(result)
