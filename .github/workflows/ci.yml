@@ -93,3 +93,38 @@ jobs:
 
       - name: Real CPU engine suite
         run: uv run pytest -m slow tests/test_transcription_cpu_slow.py
+
+  docker:
+    # Build + boot smoke for the optional server image (R15). HF_HUB_OFFLINE
+    # keeps the gate hermetic: startup warmup fails fast inside its best-effort
+    # contract instead of pulling the model from the network. GET / must serve
+    # HTML — a health-only smoke passes even when the UI failed to mount.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t voice-notes:ci .
+
+      - name: Boot container and smoke both surfaces
+        run: |
+          mkdir -p "$RUNNER_TEMP/vn-data"
+          docker run -d --name vn -p 8477:8477 \
+            -e HF_HUB_OFFLINE=1 \
+            -v "$RUNNER_TEMP/vn-data:/data" \
+            voice-notes:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8477/api/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8477/api/health
+          curl -fsS http://127.0.0.1:8477/ | grep -qi '<html'
+
+      - name: Container logs (always, for diagnosis)
+        if: always()
+        run: docker logs vn || true
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f vn || true

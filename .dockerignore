@@ -1,0 +1,10 @@
+# A locally-built venv is platform-specific and must never enter the image;
+# the build creates its own. dist/ is rebuilt in the frontend stage.
+.venv
+frontend/node_modules
+frontend/dist
+.git
+.github
+.claude
+docs
+tests
