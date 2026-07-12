@@ -1,14 +1,22 @@
-"""Shared fixtures: tiny audio samples generated with macOS `say` + the vendored ffmpeg."""
+"""Shared fixtures: committed spoken clips + platform-independent generated audio.
+
+The three spoken clips need real speech, which only macOS can synthesize, so they
+are committed under tests/fixtures/ and merely copied here — regenerate them with
+`uv run python scripts/generate_test_fixtures.py` (macOS only). silence.wav and
+corrupt.m4a generate anywhere, so they are produced fresh each session instead.
+"""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
 import imageio_ffmpeg
 import pytest
 
-SPOKEN_TEXT = "Remember to call the landlord about the deposit."
+COMMITTED_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+SPOKEN_CLIPS = ("spoken.m4a", "spoken.opus", "spoken.webm")
 
 
 @pytest.fixture(scope="session")
@@ -24,37 +32,20 @@ def _run(command: list[str]) -> None:
         )
 
 
-def _encode(ffmpeg: str, source: Path, destination: Path, codec_attempts: list[list[str]]) -> None:
-    last_error: RuntimeError | None = None
-    for codec_args in codec_attempts:
-        try:
-            _run([ffmpeg, "-nostdin", "-y", "-i", str(source), *codec_args, str(destination)])
-            return
-        except RuntimeError as error:
-            last_error = error
-    raise last_error if last_error else RuntimeError("no codec attempts supplied")
-
-
 @pytest.fixture(scope="session")
 def fixtures_dir(tmp_path_factory: pytest.TempPathFactory, ffmpeg_exe: str) -> Path:
     root = tmp_path_factory.mktemp("audio-fixtures")
 
-    spoken_aiff = root / "spoken.aiff"
-    _run(["/usr/bin/say", "-o", str(spoken_aiff), SPOKEN_TEXT])
+    missing = [name for name in SPOKEN_CLIPS if not (COMMITTED_FIXTURES_DIR / name).is_file()]
+    if missing:
+        raise RuntimeError(
+            f"committed audio fixtures missing from {COMMITTED_FIXTURES_DIR}: "
+            f"{', '.join(missing)} — regenerate on macOS with "
+            "`uv run python scripts/generate_test_fixtures.py` and commit the results"
+        )
+    for name in SPOKEN_CLIPS:
+        shutil.copyfile(COMMITTED_FIXTURES_DIR / name, root / name)
 
-    _encode(ffmpeg_exe, spoken_aiff, root / "spoken.m4a", [["-c:a", "aac"]])
-    _encode(
-        ffmpeg_exe,
-        spoken_aiff,
-        root / "spoken.opus",
-        [["-c:a", "libopus"], ["-c:a", "opus", "-strict", "-2"]],
-    )
-    _encode(
-        ffmpeg_exe,
-        spoken_aiff,
-        root / "spoken.webm",
-        [["-c:a", "libopus"], ["-c:a", "libvorbis"]],
-    )
     _run(
         [
             ffmpeg_exe,
