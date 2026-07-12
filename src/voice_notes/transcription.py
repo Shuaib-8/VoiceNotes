@@ -1,10 +1,11 @@
-"""The transcription seam: ffmpeg normalization and the mlx-whisper adapter (KTD-1, KTD-3).
+"""The transcription seam: ffmpeg normalization and the engine adapters (KTD-1, KTD-3).
 
 Adapters take a normalized WAV path and return plain data with provenance —
 no engine types leak, so an engine swap (or a future subprocess sidecar) is
-just another adapter. The mlx adapter never hands the library a file path:
-path input makes ``mlx_whisper`` shell out to a PATH-resolved ``ffmpeg``
-(a hidden Homebrew dependency); we decode the WAV in-process instead.
+just another adapter. Neither adapter hands its library a file path: path
+input makes ``mlx_whisper`` shell out to a PATH-resolved ``ffmpeg`` (a hidden
+Homebrew dependency); we decode the WAV in-process instead, and faster-whisper
+consumes the decoded waveform as-is.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import wave
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import imageio_ffmpeg
 import numpy as np
@@ -22,7 +23,13 @@ from pydantic import BaseModel
 
 from voice_notes.archive import TranscriptionProvenance
 
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
+
 DEFAULT_MODEL_ID = "mlx-community/whisper-large-v3-turbo"
+# Canonical faster-whisper alias (in faster_whisper.utils.available_models());
+# resolves to the mobiuslabsgmbh/faster-whisper-large-v3-turbo CTranslate2 weights.
+DEFAULT_CPU_MODEL_ID = "large-v3-turbo"
 TARGET_SAMPLE_RATE = 16_000
 
 
@@ -121,3 +128,66 @@ class MlxWhisperTranscriber:
 
         result = mlx_whisper.transcribe(waveform, path_or_hf_repo=self._model_id)
         return dict(result)
+
+
+class FasterWhisperTranscriber:
+    """faster-whisper (CTranslate2) on CPU; the model loads lazily and stays resident (KTD-5).
+
+    Device is always ``"cpu"`` with ``num_workers=1``: the serial worker queue is the
+    concurrency model, so extra workers would only add OpenMP thread contention.
+    ``cpu_threads`` stays at the library's auto default.
+    """
+
+    def __init__(self, model_id: str = DEFAULT_CPU_MODEL_ID, compute_type: str = "int8") -> None:
+        self._model_id = model_id
+        self._compute_type = compute_type
+        self._model: WhisperModel | None = None
+
+    def warmup(self) -> None:
+        """Best-effort model load so the first real note doesn't pay it (non-blocking caller)."""
+        try:
+            self._run_engine(np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32))
+        except Exception:  # noqa: BLE001 - warmup must never take the app down
+            pass
+
+    def transcribe(self, wav_path: Path) -> TranscriptionResult:
+        text, language = self._run_engine(read_waveform(wav_path))
+        return TranscriptionResult(
+            text=text,
+            language=language,
+            provenance=TranscriptionProvenance(
+                engine="faster-whisper",
+                model=self._model_id,
+                engine_version=version("faster-whisper"),
+                params={
+                    "compute_type": self._compute_type,
+                    "device": "cpu",
+                    "num_workers": 1,
+                },
+                transcribed_at=datetime.now().astimezone(),
+                language=language,
+            ),
+        )
+
+    def _run_engine(self, waveform: np.ndarray) -> tuple[str, str | None]:
+        # faster-whisper consumes an ndarray as-is (no decode/resample of its own), so
+        # guard the contract read_waveform upholds: float32 mono at TARGET_SAMPLE_RATE.
+        if waveform.dtype != np.float32 or waveform.ndim != 1:
+            raise NormalizationError("engine input must be a float32 mono waveform")
+        if self._model is None:
+            # heavy import deferred so fast paths never pay it
+            from faster_whisper import WhisperModel
+
+            self._model = WhisperModel(
+                self._model_id,
+                device="cpu",
+                compute_type=self._compute_type,
+                num_workers=1,
+            )
+        segments, info = self._model.transcribe(waveform)
+        # segments is a lazy generator: drain it eagerly inside this serial job.
+        segment_texts = [segment.text for segment in segments]
+        raw_language = info.language
+        return "".join(segment_texts).strip(), (
+            str(raw_language) if raw_language is not None else None
+        )
