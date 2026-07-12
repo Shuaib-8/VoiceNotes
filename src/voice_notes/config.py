@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal, cast, get_args
 
 from pydantic import BaseModel
 
@@ -18,7 +19,8 @@ MODEL_ENV_VAR = "VOICE_NOTES_MODEL"
 HOST_ENV_VAR = "VOICE_NOTES_HOST"
 
 DEFAULT_HOST = "127.0.0.1"
-VALID_ENGINES: tuple[str, ...] = ("auto", "mlx-whisper", "faster-whisper")
+EngineName = Literal["auto", "mlx-whisper", "faster-whisper"]
+VALID_ENGINES: tuple[str, ...] = get_args(EngineName)
 
 
 class Settings(BaseModel):
@@ -28,13 +30,17 @@ class Settings(BaseModel):
     port: int = 8477
     frontend_dist: Path = _PROJECT_ROOT / "frontend" / "dist"
     archive_root: Path | None = None  # None -> resolve via env / ~/VoiceNotes
-    engine: str = "auto"  # "auto" -> platform pick in app.select_transcriber
+    engine: EngineName = "auto"  # "auto" -> platform pick in app.select_transcriber
     model: str | None = None  # None -> the selected engine's own default
+
+
+def _env_source(env: Mapping[str, str] | None) -> Mapping[str, str]:
+    return os.environ if env is None else env
 
 
 def resolve_archive_root(env: Mapping[str, str] | None = None) -> Path:
     """Owner-choosable archive location (R10): env override, else ~/VoiceNotes."""
-    source = os.environ if env is None else env
+    source = _env_source(env)
     override = source.get(ARCHIVE_ENV_VAR)
     if override:
         return Path(override).expanduser()
@@ -47,25 +53,25 @@ def ensure_archive_root(env: Mapping[str, str] | None = None) -> Path:
     return root
 
 
-def resolve_engine(env: Mapping[str, str] | None = None) -> str:
+def resolve_engine(env: Mapping[str, str] | None = None) -> EngineName:
     """Engine choice: env override, else "auto" (platform pick); bad values fail at startup."""
-    source = os.environ if env is None else env
+    source = _env_source(env)
     value = source.get(ENGINE_ENV_VAR) or "auto"
     if value not in VALID_ENGINES:
         raise ValueError(
             f"{ENGINE_ENV_VAR}={value!r} is not a supported engine; "
             f"valid values: {', '.join(VALID_ENGINES)}"
         )
-    return value
+    return cast("EngineName", value)
 
 
 def resolve_model(env: Mapping[str, str] | None = None) -> str | None:
     """Model-id override for the selected engine: env value, else the engine's own default."""
-    source = os.environ if env is None else env
+    source = _env_source(env)
     return source.get(MODEL_ENV_VAR) or None
 
 
 def resolve_host(env: Mapping[str, str] | None = None) -> str:
     """Bind address: env override (containers bind all interfaces), else loopback."""
-    source = os.environ if env is None else env
+    source = _env_source(env)
     return source.get(HOST_ENV_VAR) or DEFAULT_HOST

@@ -120,13 +120,10 @@ def test_unset_model_keeps_each_adapters_own_default() -> None:
 
 
 def test_unknown_engine_value_fails_naming_the_valid_values() -> None:
+    # engine is a closed Literal, so rejection happens at the Settings boundary,
+    # before any engine logic runs.
     with pytest.raises(ValueError, match=r"auto.*mlx-whisper.*faster-whisper"):
-        select_transcriber(
-            Settings(engine="whisperx"),
-            sys_platform="linux",
-            machine="x86_64",
-            find_spec=_find_spec_stub(*BOTH_ENGINES),
-        )
+        Settings.model_validate({"engine": "whisperx"})
 
 
 def test_selected_engine_missing_on_this_platform_fails_loudly() -> None:

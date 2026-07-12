@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import subprocess
 import wave
+from collections.abc import Callable
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
@@ -94,6 +95,14 @@ def read_waveform(wav_path: Path) -> np.ndarray:
     return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+def _best_effort_warmup(run_engine: Callable[[np.ndarray], object]) -> None:
+    """Best-effort model load so the first real note doesn't pay it (non-blocking caller)."""
+    try:
+        run_engine(np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32))
+    except Exception:  # noqa: BLE001 - warmup must never take the app down
+        pass
+
+
 class MlxWhisperTranscriber:
     """mlx-whisper on Metal; the model loads lazily and stays resident (KTD-5)."""
 
@@ -101,11 +110,7 @@ class MlxWhisperTranscriber:
         self._model_id = model_id
 
     def warmup(self) -> None:
-        """Best-effort model load so the first real note doesn't pay it (non-blocking caller)."""
-        try:
-            self._run_engine(np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32))
-        except Exception:  # noqa: BLE001 - warmup must never take the app down
-            pass
+        _best_effort_warmup(self._run_engine)
 
     def transcribe(self, wav_path: Path) -> TranscriptionResult:
         output = self._run_engine(read_waveform(wav_path))
@@ -147,11 +152,7 @@ class FasterWhisperTranscriber:
         self._model: WhisperModel | None = None
 
     def warmup(self) -> None:
-        """Best-effort model load so the first real note doesn't pay it (non-blocking caller)."""
-        try:
-            self._run_engine(np.zeros(TARGET_SAMPLE_RATE // 2, dtype=np.float32))
-        except Exception:  # noqa: BLE001 - warmup must never take the app down
-            pass
+        _best_effort_warmup(self._run_engine)
 
     def transcribe(self, wav_path: Path) -> TranscriptionResult:
         text, language = self._run_engine(read_waveform(wav_path))
