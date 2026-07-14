@@ -17,11 +17,22 @@ Transcription picks its engine automatically at startup:
 - **macOS on Apple Silicon** — mlx-whisper on Metal (GPU-fast).
 - **Windows 11 / Linux** — faster-whisper (CTranslate2) on the CPU, int8-quantized. Same Whisper model family, near-parity transcripts; slower than Metal, but faster than real-time on a modern CPU.
 
-Windows and Linux support is **CI-verified**: a GitHub Actions matrix (macOS / Windows / Ubuntu) runs the full backend and frontend suites on every push, and a real-engine smoke transcribes committed audio fixtures on Windows and Ubuntu runners. No human-run Windows hardware is in the loop — the support claim is exactly as strong as that automation.
+Windows and Linux support is **CI-verified**: a GitHub Actions matrix (macOS / Windows / Ubuntu) runs the full backend and frontend suites on every merge to `main`, and a real-engine smoke transcribes committed audio fixtures on Windows and Ubuntu runners. No human-run Windows hardware is in the loop — the support claim is exactly as strong as that automation.
 
 No compiler and no system ffmpeg needed on any OS: a vendored ffmpeg ships with the Python dependencies, and the engine receives decoded audio directly.
 
 ## Setup
+
+On macOS, Linux, or WSL2, two commands install everything and start the app:
+
+```bash
+make setup   # backend deps (uv provisions Python 3.12) + frontend build
+make run     # serve UI + API on http://127.0.0.1:8477
+```
+
+(`make` alone lists every target: tests, lint/types, the Docker compose service.)
+
+The equivalent manual steps — and the only path on native Windows, which has no `make`:
 
 ```bash
 # 1. Install backend dependencies (uv provisions Python 3.12 automatically)
@@ -102,16 +113,31 @@ A bad engine value — or asking for an engine that isn't installed on this plat
 
 ## Docker (optional)
 
-For server or reproducibility use — **not** the way to run this on Windows (Windows runs natively via uv, above). The image is multi-stage, and CI builds and boot-smokes it on every push.
+For server or reproducibility use — **not** the way to run this on Windows (Windows runs natively via uv, above). The image is multi-stage, and CI builds and boot-smokes it on every merge to `main`.
+
+The compose file is the preferred way to run it, and it makes the container behave like the native app: the archive is bind-mounted to **`~/VoiceNotes` on the host** — the same folder, same plain-files format as a native install.
+
+```bash
+docker compose up -d --build     # or: make docker-up
+```
+
+- Notes land in `~/VoiceNotes/<note-folder>/` on the host. Override the location with `VOICE_NOTES_DIR=/path docker compose up -d`.
+- The model cache lives in a named volume (`voice-notes-hf-cache`), so the ~1.5 GB first-run download survives container recreation and re-clones. Point `HF_CACHE_DIR` at a host folder to reuse an existing cache.
+- Run one instance at a time against a given archive — native **or** container, not both at once.
+- On a Linux host the container writes archive files as root; on macOS/Windows (Docker Desktop, OrbStack) bind mounts map to your user.
+- On native Windows, run compose from WSL2 or Git Bash (both set `$HOME`) — native PowerShell/CMD don't, so the default archive path resolves incorrectly there. Pass `VOICE_NOTES_DIR` explicitly if you must run compose from PowerShell.
+
+> **The image ships no authentication.** Like the native app it serves every note to anyone who can reach the port — but the container binds `0.0.0.0` internally, so publishing it on all host interfaces would expose your notes to the whole network. The compose file scopes the port to `127.0.0.1` (loopback), matching the native default. To reach it from other machines, front it with an authenticating reverse proxy — do not publish it directly on an untrusted network.
+
+Without compose, the equivalent single-image run:
 
 ```bash
 docker build -t voice-notes .
-docker run -d -p 8477:8477 -v ~/voice-notes-data:/data voice-notes
+docker run -d -p 127.0.0.1:8477:8477 \
+  -v ~/VoiceNotes:/data/archive -v voice-notes-hf-cache:/data/hf-cache voice-notes
 ```
 
-`/data` holds both the archive (`/data/archive`) and the model cache (`/data/hf-cache`), so models survive container recreation. The first transcription in a fresh container downloads the model into the volume.
-
-To verify a container by hand: open http://localhost:8477, upload a voice file through the UI, and confirm a **Complete** note lands inside the mounted volume's archive folder (`~/voice-notes-data/archive/...`).
+To verify a container by hand: open http://localhost:8477, upload a voice file through the UI, and confirm a **Complete** note lands in `~/VoiceNotes/` on the host.
 
 ## Development
 

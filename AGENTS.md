@@ -24,7 +24,9 @@ cd frontend && npm run build              # tsc -b + vite build
 
 Everything runs through `uv` — never bare `pip`/`python`/`venv`. The frontend build output (`frontend/dist/`, gitignored) must exist for `uv run voice-notes` to serve the UI.
 
-CI (`.github/workflows/ci.yml`) reruns all of the above on a macOS/Windows/Ubuntu matrix on every push, installing strictly from the committed lockfile (`uv sync --locked`, never re-locking); a real CPU-engine suite runs on Windows/Ubuntu (`uv run pytest -m slow tests/test_transcription_cpu_slow.py`), and a Docker build + boot smoke runs on Ubuntu. That matrix — not hand-testing — backs the Windows/Linux support claim.
+CI (`.github/workflows/ci.yml`) reruns all of the above on a macOS/Windows/Ubuntu matrix on every merge (push) to `main` — plus manual `workflow_dispatch` for on-demand branch runs; feature-branch pushes do not trigger it. Every lane installs strictly from the committed lockfile (`uv sync --locked`, never re-locking); a real CPU-engine suite runs on Windows/Ubuntu (`uv run pytest -m slow tests/test_transcription_cpu_slow.py`), and a Docker build + boot smoke runs on Ubuntu. That matrix — not hand-testing — backs the Windows/Linux support claim.
+
+A `Makefile` wraps the commands above for first-time setup and daily use (`make setup`, `make run`, `make test`, `make check`, `make docker-up`; bare `make` lists all targets — macOS/Linux/WSL2, not native Windows). `docker-compose.yml` is the preferred container entry point: it binds the archive to `~/VoiceNotes` on the host (native-identical layout) and keeps the model cache in the `voice-notes-hf-cache` named volume.
 
 ## Architecture
 
