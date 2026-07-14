@@ -103,3 +103,20 @@ def test_faster_whisper_defaults_match_the_cpu_decision() -> None:
     adapter = FasterWhisperTranscriber()
     assert adapter._model_id == DEFAULT_CPU_MODEL_ID
     assert adapter._compute_type == "int8"
+
+
+@pytest.mark.parametrize(
+    "waveform",
+    [
+        np.zeros(16, dtype=np.int16),  # wrong dtype
+        np.zeros((2, 16), dtype=np.float32),  # 2-D, not mono
+    ],
+)
+def test_faster_whisper_rejects_non_float32_mono_input(waveform: np.ndarray) -> None:
+    """faster-whisper consumes the ndarray as-is, so the adapter guards the read_waveform
+    contract (float32 mono) itself — and does so before the lazy engine import, so a bad
+    input never triggers a model load."""
+    adapter = FasterWhisperTranscriber()
+    with pytest.raises(NormalizationError, match="float32 mono"):
+        adapter._run_engine(waveform)
+    assert adapter._model is None

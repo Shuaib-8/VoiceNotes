@@ -52,11 +52,24 @@ def make_provenance() -> TranscriptionProvenance:
     )
 
 
+def make_cpu_provenance() -> TranscriptionProvenance:
+    """The faster-whisper provenance shape: params carry mixed str and int values."""
+    return TranscriptionProvenance(
+        engine="faster-whisper",
+        model="large-v3-turbo",
+        engine_version="1.2.1",
+        params={"compute_type": "int8", "device": "cpu", "num_workers": 1},
+        transcribed_at=datetime(2026, 7, 12, 12, 0, 0, tzinfo=LOCAL_TZ),
+        language="en",
+    )
+
+
 def make_frontmatter(
     audio: str = "audio.webm",
     source: str = "mic",
     original_filename: str | None = None,
     captured_at: datetime = CAPTURED_AT,
+    transcription: TranscriptionProvenance | None = None,
 ) -> NoteFrontmatter:
     return NoteFrontmatter(
         captured_at=captured_at,
@@ -65,7 +78,7 @@ def make_frontmatter(
         mime_type="audio/webm",
         duration_seconds=4.2,
         audio=audio,
-        transcription=make_provenance(),
+        transcription=transcription if transcription is not None else make_provenance(),
     )
 
 
@@ -210,6 +223,19 @@ def test_frontmatter_round_trips_through_note_md() -> None:
     assert parsed == frontmatter
     assert parsed.captured_at.tzinfo is not None
     assert transcript == "remember to call the landlord about the deposit"
+
+
+def test_faster_whisper_provenance_round_trips_through_note_md() -> None:
+    """R7: a faster-whisper note is self-describing on disk. Its provenance params mix str
+    and int (num_workers is an int), so this pins that the mixed-type dict survives the YAML
+    frontmatter round trip — a mixed-engine archive stays readable on any platform."""
+    frontmatter = make_frontmatter(transcription=make_cpu_provenance())
+    parsed, transcript = parse_note_md(compose_note_md(frontmatter, "call the landlord"))
+    assert parsed == frontmatter
+    assert parsed.transcription.engine == "faster-whisper"
+    assert parsed.transcription.params["num_workers"] == 1
+    assert isinstance(parsed.transcription.params["num_workers"], int)
+    assert transcript == "call the landlord"
 
 
 def test_multiline_and_empty_transcripts_round_trip() -> None:
