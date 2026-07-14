@@ -20,6 +20,7 @@ HOST_ENV_VAR = "VOICE_NOTES_HOST"
 
 DEFAULT_HOST = "127.0.0.1"
 EngineName = Literal["auto", "mlx-whisper", "faster-whisper"]
+DEFAULT_ENGINE: EngineName = "auto"
 VALID_ENGINES: tuple[str, ...] = get_args(EngineName)
 
 
@@ -30,7 +31,7 @@ class Settings(BaseModel):
     port: int = 8477
     frontend_dist: Path = _PROJECT_ROOT / "frontend" / "dist"
     archive_root: Path | None = None  # None -> resolve via env / ~/VoiceNotes
-    engine: EngineName = "auto"  # "auto" -> platform pick in app.select_transcriber
+    engine: EngineName = DEFAULT_ENGINE  # "auto" -> platform pick in app.select_transcriber
     model: str | None = None  # None -> the selected engine's own default
 
 
@@ -56,7 +57,7 @@ def ensure_archive_root(env: Mapping[str, str] | None = None) -> Path:
 def resolve_engine(env: Mapping[str, str] | None = None) -> EngineName:
     """Engine choice: env override, else "auto" (platform pick); bad values fail at startup."""
     source = _env_source(env)
-    value = source.get(ENGINE_ENV_VAR) or "auto"
+    value = source.get(ENGINE_ENV_VAR) or DEFAULT_ENGINE
     if value not in VALID_ENGINES:
         raise ValueError(
             f"{ENGINE_ENV_VAR}={value!r} is not a supported engine; "

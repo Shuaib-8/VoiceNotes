@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from voice_notes.archive import NoteAlreadyCompleteError
 from voice_notes.config import (
+    DEFAULT_ENGINE,
     ENGINE_ENV_VAR,
     VALID_ENGINES,
     Settings,
@@ -179,15 +180,18 @@ def select_transcriber(
 
     ``auto`` maps to mlx-whisper on macOS/Apple Silicon (Metal) and to
     faster-whisper (CPU) everywhere else. Availability is probed with
-    ``find_spec`` so misconfiguration fails loudly at startup without importing
-    a heavy engine package; constructing an adapter stays lazy.
+    ``find_spec`` so a missing engine *package* fails loudly at startup without
+    importing a heavy engine package; constructing an adapter stays lazy. Note
+    this catches an absent package, not a present-but-unloadable native runtime
+    (e.g. a broken ctranslate2/libgomp1): that surfaces on the first capture as
+    a failed, retryable note, since warmup is best-effort.
     """
     resolved_platform = sys.platform if sys_platform is None else sys_platform
     resolved_machine = platform.machine() if machine is None else machine
     probe = importlib.util.find_spec if find_spec is None else find_spec
 
     engine = settings.engine
-    if engine == "auto":
+    if engine == DEFAULT_ENGINE:
         on_apple_silicon = resolved_platform == "darwin" and resolved_machine == "arm64"
         engine = "mlx-whisper" if on_apple_silicon else "faster-whisper"
 
