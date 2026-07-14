@@ -4,8 +4,11 @@
 # every lane installs strictly from the committed lock.
 name: ci
 
+# Triggers: merges into main (a merge lands as a push to main) plus manual dispatch
+# for on-demand runs on any branch — not every push to every branch.
 on:
   push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -120,6 +123,10 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8477/api/health
           curl -fsS http://127.0.0.1:8477/ | grep -qi '<html'
+          # Health + HTML prove the app booted, not that the engine can load. Import
+          # the CPU engine in-container (no download; runs under HF_HUB_OFFLINE=1) so a
+          # missing libgomp1 or ABI-mismatched ctranslate2 wheel fails RED, not green.
+          docker exec vn python -c "import ctranslate2, faster_whisper"
 
       - name: Container logs (always, for diagnosis)
         if: always()

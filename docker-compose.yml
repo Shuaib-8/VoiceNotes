@@ -1,0 +1,32 @@
+# Preferred way to run the optional server image (R14). The archive is bind-mounted
+# to ~/VoiceNotes on the host, so notes land in exactly the same folder — and the
+# same plain-files format — as the native app. The model cache lives in a named
+# volume so the ~1.5 GB first-run download survives container recreation.
+#
+# Run:       docker compose up -d --build     -> http://127.0.0.1:8477
+# Override:  VOICE_NOTES_DIR=/path/to/archive docker compose up -d
+#            HF_CACHE_DIR=/path/to/hf-cache (reuse an existing model cache)
+# The archive default is $HOME/VoiceNotes — Compose interpolates $HOME reliably
+# (a bare ~ is not expanded on every Compose version). Set VOICE_NOTES_DIR
+# explicitly on any host where $HOME is unset.
+#
+# The image ships no authentication, so the port is published on loopback only —
+# front it with an authenticating reverse proxy before exposing it to a network.
+# Run one instance at a time against a given archive (native OR container).
+
+services:
+  voice-notes:
+    build: .
+    image: voice-notes
+    container_name: voice-notes
+    ports:
+      - "127.0.0.1:8477:8477"
+    volumes:
+      - "${VOICE_NOTES_DIR:-$HOME/VoiceNotes}:/data/archive"
+      - "${HF_CACHE_DIR:-hf-cache}:/data/hf-cache"
+    restart: unless-stopped
+
+volumes:
+  hf-cache:
+    # Stable name: the cache is per-machine, not per-checkout — a re-clone reuses it.
+    name: voice-notes-hf-cache

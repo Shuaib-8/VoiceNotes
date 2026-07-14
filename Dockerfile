@@ -46,14 +46,16 @@ WORKDIR /app
 COPY --from=builder /app /app
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
-# Model cache and archive live on the volume: model swaps survive container
-# recreation and never force an image rebuild (KTD-9).
+# Model cache and archive live under /data, mounted at run time (docker-compose.yml
+# binds the archive to ~/VoiceNotes and keeps the cache in a named volume): model
+# swaps survive container recreation and never force an image rebuild (KTD-9).
+# No VOLUME directive — compose mounts /data/archive and /data/hf-cache separately,
+# and a declared VOLUME /data would spawn a stray anonymous volume on every run.
 ENV PATH="/app/.venv/bin:$PATH" \
     HF_HOME=/data/hf-cache \
     VOICE_NOTES_ARCHIVE=/data/archive \
     VOICE_NOTES_HOST=0.0.0.0
 
-VOLUME /data
 EXPOSE 8477
 
 CMD ["voice-notes"]
