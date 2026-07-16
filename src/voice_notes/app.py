@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import mimetypes
+import platform
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -15,7 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from voice_notes.archive import NoteAlreadyCompleteError
-from voice_notes.config import Settings, ensure_archive_root
+from voice_notes.config import (
+    DEFAULT_ENGINE,
+    ENGINE_ENV_VAR,
+    VALID_ENGINES,
+    Settings,
+    ensure_archive_root,
+    resolve_engine,
+    resolve_host,
+    resolve_model,
+)
 from voice_notes.ingest import (
     DeleteNotAllowedError,
     FileTooLargeError,
@@ -25,7 +37,11 @@ from voice_notes.ingest import (
     RetryNotAllowedError,
     UnsupportedFormatError,
 )
-from voice_notes.transcription import MlxWhisperTranscriber, Transcriber
+from voice_notes.transcription import (
+    FasterWhisperTranscriber,
+    MlxWhisperTranscriber,
+    Transcriber,
+)
 from voice_notes.worker import TranscriptionWorker
 
 
@@ -149,6 +165,61 @@ async def search(service: ServiceDep, q: str = "") -> list[NoteSummary]:
     return await run_in_threadpool(service.search, q)
 
 
+class EngineUnavailableError(RuntimeError):
+    """The selected transcription engine's package is not installed on this platform."""
+
+
+def select_transcriber(
+    settings: Settings,
+    *,
+    sys_platform: str | None = None,
+    machine: str | None = None,
+    find_spec: Callable[[str], object | None] | None = None,
+) -> Transcriber:
+    """Pick the engine for this platform — the codebase's single platform branch.
+
+    ``auto`` maps to mlx-whisper on macOS/Apple Silicon (Metal) and to
+    faster-whisper (CPU) everywhere else. Availability is probed with
+    ``find_spec`` so a missing engine *package* fails loudly at startup without
+    importing a heavy engine package; constructing an adapter stays lazy. Note
+    this catches an absent package, not a present-but-unloadable native runtime
+    (e.g. a broken ctranslate2/libgomp1): that surfaces on the first capture as
+    a failed, retryable note, since warmup is best-effort.
+    """
+    resolved_platform = sys.platform if sys_platform is None else sys_platform
+    resolved_machine = platform.machine() if machine is None else machine
+    probe = importlib.util.find_spec if find_spec is None else find_spec
+
+    engine = settings.engine
+    if engine == DEFAULT_ENGINE:
+        on_apple_silicon = resolved_platform == "darwin" and resolved_machine == "arm64"
+        engine = "mlx-whisper" if on_apple_silicon else "faster-whisper"
+
+    if engine == "mlx-whisper":
+        if probe("mlx_whisper") is None:
+            raise EngineUnavailableError(
+                "engine 'mlx-whisper' is not installed — it requires macOS on Apple Silicon; "
+                f"unset {ENGINE_ENV_VAR} (auto) or set it to 'faster-whisper'"
+            )
+        if settings.model is not None:
+            return MlxWhisperTranscriber(model_id=settings.model)
+        return MlxWhisperTranscriber()
+
+    if engine == "faster-whisper":
+        if probe("faster_whisper") is None:
+            raise EngineUnavailableError(
+                "engine 'faster-whisper' is not installed — install the faster-whisper "
+                f"package or unset {ENGINE_ENV_VAR} (auto)"
+            )
+        if settings.model is not None:
+            return FasterWhisperTranscriber(model_id=settings.model)
+        return FasterWhisperTranscriber()
+
+    raise ValueError(
+        f"unknown engine {settings.engine!r}; valid values: {', '.join(VALID_ENGINES)}"
+    )
+
+
 def create_app(settings: Settings | None = None, transcriber: Transcriber | None = None) -> FastAPI:
     """Build the app; the static mount is added only when a built frontend exists."""
     resolved = settings or Settings()
@@ -160,7 +231,9 @@ def create_app(settings: Settings | None = None, transcriber: Transcriber | None
             archive_root.mkdir(parents=True, exist_ok=True)
         else:
             archive_root = ensure_archive_root()
-        engine: Transcriber = transcriber if transcriber is not None else MlxWhisperTranscriber()
+        engine: Transcriber = (
+            transcriber if transcriber is not None else select_transcriber(resolved)
+        )
         worker = TranscriptionWorker()
         worker.start()
         service = IngestService(archive_root, worker, engine)
@@ -195,5 +268,6 @@ def create_app(settings: Settings | None = None, transcriber: Transcriber | None
 
 
 def main() -> None:
-    settings = Settings()
+    # Env overrides resolve here, once, so bad config fails before uvicorn binds.
+    settings = Settings(engine=resolve_engine(), model=resolve_model(), host=resolve_host())
     uvicorn.run(create_app(settings), host=settings.host, port=settings.port)

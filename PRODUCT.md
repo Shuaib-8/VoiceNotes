@@ -6,11 +6,11 @@ product
 
 ## Users
 
-One person: the owner, on macOS (Chrome, Apple Silicon), capturing thoughts by voice throughout the day — walking in with a memo, uploading a WhatsApp voice note, recording at the desk. Context is "I have a thought, get it down with zero keyboard"; later, "find that note and paste its transcript wherever I'm working." The job: frictionless capture in, frictionless recall out (recall ends in a paste, not an export).
+One person: the owner, on whichever of their machines is nearest — the Mac, a Windows laptop, a Linux box (Chrome as the v1 browser) — capturing thoughts by voice throughout the day — walking in with a memo, uploading a WhatsApp voice note, recording at the desk. Context is "I have a thought, get it down with zero keyboard"; later, "find that note and paste its transcript wherever I'm working." The job: frictionless capture in, frictionless recall out (recall ends in a paste, not an export).
 
 ## Product Purpose
 
-Personal, local-first voice notes: record from the mic or upload a voice file, get a transcript within seconds from a local mlx-whisper model, and keep every note as plain files (immutable original audio + markdown transcript) in an archive folder that outlives the app. No cloud, no accounts, no database. Success looks like: a note lands transcribed seconds after you stop talking, every transcript is one click from the clipboard, and the archive stays readable by any tool forever.
+Personal, local-first voice notes: record from the mic or upload a voice file, get a transcript from a local Whisper-class model — within seconds on Apple Silicon (Metal); roughly real-time on GPU-less Windows/Linux machines, still local, still private — and keep every note as plain files (immutable original audio + markdown transcript) in an archive folder that outlives the app. No cloud, no accounts, no database. Success looks like: a note lands transcribed soon after you stop talking, every transcript is one click from the clipboard, and the archive stays readable by any tool forever.
 
 ## Brand Personality
 

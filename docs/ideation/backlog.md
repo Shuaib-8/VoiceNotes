@@ -25,6 +25,12 @@ Seeded 2026-07-07 from the walking-skeleton plan's *Scope Boundaries* and the or
 | External index / caches | A rebuildable index kept *outside* the archive folder, so the archive stays pure canonical files. | shelved | plan Design principles |
 | Multi-device / phone capture | Capture from devices other than the owner's Mac. | shelved | plan Deferred |
 | Egress-deny sandbox hardening | Lock down the app's network egress. | shelved | plan Deferred |
+| Data store scalability (local MD vs multi-tenant DB) | If this ever became a multi-user web app, local markdown files wouldn't hold — would need user auth, multi-tenancy, and object storage (e.g. S3) behind it. Today's local-first, single-user identity (see *Out of scope* below) makes this moot; flagging so a future pivot is a deliberate decision, not accidental drift. | shelved | user note, 2026-07-14 |
+| Quit-recording keyboard shortcut (e.g. `Q`) | A dedicated hotkey to abandon an in-progress recording, distinct from the existing Stop/cancel-confirmation flow — discard a bad take without reaching for the mouse. | shelved | user note, 2026-07-14 |
+| Preview environments | Ephemeral per-PR/per-branch deployments for manual QA before merge. | shelved | user note, 2026-07-14 |
+| Hybrid search via Postgres + pgvector | Alternative to the already-scouted sqlite-vec + FTS5 hybrid: full-text via Postgres at scale, semantic via pgvector, framed as a long-term-memory layer. Requires a live Postgres instance — in tension with the product's local-first, no-database identity; compare against sqlite-vec before committing either way. | shelved | user note, 2026-07-14 |
+| Transcript-cleanup agent pass | A dedicated pass (LLM or rules-based) to scrub filler words and fix formatting/punctuation before the transcript is handed off and written into `note.md` — improves the readability of the final artifact. | shelved | user note, 2026-07-14 |
+| Playback speed control | Adjustable audio playback speed (up to 2x, 0.25x increments) in the note detail view. | shelved | user note, 2026-07-14 |
 
 ## Technical follow-ups (surfaced during the build)
 
@@ -32,6 +38,7 @@ Seeded 2026-07-07 from the walking-skeleton plan's *Scope Boundaries* and the or
 |------|-----|--------|--------|
 | Guard `sweep_transfer_garbage` for concurrency | Makes the same per-folder read as the fixed `scan_archive` race; safe today (startup-only) but needs the identical `OSError` guard if it ever runs on a live/concurrent path. | shelved | docs/solutions/runtime-errors/concurrent-delete-races-directory-scan.md |
 | Scan cache at scale | `get` / `audio` / `retry` each re-scan the whole archive; fine at personal scale, revisit with a write-invalidated cache if the corpus grows large. | shelved | docs/pr/2026-07-07-001-frontend-optimisation.md |
+| Compose `$HOME` unset on native Windows PowerShell | `docker-compose.yml`'s archive default interpolates `$HOME`, which native PowerShell/CMD don't set (WSL2/Git Bash do) — resolves to a bogus path there. Non-blocking: Docker isn't the recommended Windows runner and `VOICE_NOTES_DIR` is a one-flag workaround, already documented in the README and the solution doc. | shelved | docs/solutions/integration-issues/docker-compose-tilde-home-bind-mount.md |
 
 ## Out of scope by identity (deliberately never)
 

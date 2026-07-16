@@ -1,0 +1,137 @@
+# The repo's first pipeline: the platform claim (macOS + Windows + Linux) is
+# proven here, not by hand — no Windows hardware exists in this loop (R11-R13).
+# Never run `uv lock` in CI: the lockfile is regenerated only on macOS (KTD-7);
+# every lane installs strictly from the committed lock.
+name: ci
+
+# Triggers: merges into main (a merge lands as a push to main) plus manual dispatch
+# for on-demand runs on any branch — not every push to every branch.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+
+      - name: Sync from the committed lockfile
+        run: uv sync --locked
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Types (explicit paths — bare invocation can match 0 files)
+        run: uv run pyrefly check src tests
+
+      - name: Backend tests (fake engine)
+        run: uv run pytest
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install
+        run: npm ci
+        working-directory: frontend
+
+      - name: Frontend lint
+        run: npm run lint
+        working-directory: frontend
+
+      - name: Frontend tests
+        run: npm test
+        working-directory: frontend
+
+      - name: Frontend build
+        run: npm run build
+        working-directory: frontend
+
+  engine-smoke:
+    # Real CPU engine end-to-end on the platforms nobody can test by hand (R12).
+    # The model download is bounded by an HF cache keyed on OS + model tier.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      HF_HOME: ${{ github.workspace }}/.hf-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+
+      - name: Sync from the committed lockfile
+        run: uv sync --locked
+
+      - name: Cache the transcription model
+        uses: actions/cache@v4
+        with:
+          path: .hf-cache
+          key: hf-${{ runner.os }}-large-v3-turbo
+
+      - name: Real CPU engine suite
+        run: uv run pytest -m slow tests/test_transcription_cpu_slow.py
+
+  docker:
+    # Build + boot smoke for the optional server image (R15). HF_HUB_OFFLINE
+    # keeps the gate hermetic: startup warmup fails fast inside its best-effort
+    # contract instead of pulling the model from the network. GET / must serve
+    # HTML — a health-only smoke passes even when the UI failed to mount.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t voice-notes:ci .
+
+      - name: Boot container and smoke both surfaces
+        run: |
+          mkdir -p "$RUNNER_TEMP/vn-data"
+          docker run -d --name vn -p 8477:8477 \
+            -e HF_HUB_OFFLINE=1 \
+            -v "$RUNNER_TEMP/vn-data:/data" \
+            voice-notes:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8477/api/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8477/api/health
+          curl -fsS http://127.0.0.1:8477/ | grep -qi '<html'
+          # Health + HTML prove the app booted, not that the engine can load. Import
+          # the CPU engine in-container (no download; runs under HF_HUB_OFFLINE=1) so a
+          # missing libgomp1 or ABI-mismatched ctranslate2 wheel fails RED, not green.
+          docker exec vn python -c "import ctranslate2, faster_whisper"
+
+      - name: Container logs (always, for diagnosis)
+        if: always()
+        run: docker logs vn || true
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f vn || true
