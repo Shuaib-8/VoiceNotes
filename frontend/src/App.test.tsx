@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import App from './App'
@@ -260,6 +260,202 @@ test('R starts a recording and / focuses search, but never while typing', async 
   expect(screen.queryByRole('button', { name: /stop/i })).not.toBeInTheDocument()
 })
 
+test('Q discards a fresh recording silently (AE1)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  expect(await screen.findByRole('button', { name: /^record$/i })).toBeInTheDocument()
+
+  await userEvent.keyboard('r')
+  expect(await screen.findByRole('button', { name: /stop/i })).toBeInTheDocument()
+
+  await userEvent.keyboard('q')
+  expect(await screen.findByRole('button', { name: /^record$/i })).toBeInTheDocument()
+  expect(
+    calls.filter((call) => call.url === '/api/notes/mic' && call.method === 'POST'),
+  ).toHaveLength(0)
+})
+
+test('Q on a long take opens the discard confirm; Keep recording gets focus (AE2)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  expect(await screen.findByRole('button', { name: /stop/i })).toBeInTheDocument()
+
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+  await userEvent.keyboard('q')
+  expect(await screen.findByText(/discard this recording\?/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /keep recording/i })).toHaveFocus()
+
+  // Confirming it's still the same take: Keep recording returns to Stop, not Record.
+  await userEvent.click(screen.getByRole('button', { name: /keep recording/i }))
+  expect(screen.getByRole('button', { name: /^stop$/i })).toBeInTheDocument()
+  nowSpy.mockRestore()
+})
+
+test('Q while the discard confirm is showing does nothing (AE3)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+  await userEvent.keyboard('q')
+  await screen.findByText(/discard this recording\?/i)
+
+  await userEvent.keyboard('q')
+  expect(screen.getByText(/discard this recording\?/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /keep recording/i })).toBeInTheDocument()
+  nowSpy.mockRestore()
+})
+
+test('typing Q in the search box does not cancel a recording (AE4)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  await userEvent.keyboard('/')
+  expect(screen.getByRole('searchbox')).toHaveFocus()
+  await userEvent.keyboard('q')
+  expect(screen.getByRole('searchbox')).toHaveValue('q')
+  expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument()
+})
+
+test('Q while idle is a no-op', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  expect(await screen.findByRole('button', { name: /^record$/i })).toBeInTheDocument()
+
+  await userEvent.keyboard('q')
+  expect(screen.getByRole('button', { name: /^record$/i })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /stop/i })).not.toBeInTheDocument()
+})
+
+test('Q with a modifier held is ignored', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  await userEvent.keyboard('{Meta>}q{/Meta}')
+  expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument()
+})
+
+test('after a silent Q-discard, focus lands on Record rather than <body>', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  const stopButton = await screen.findByRole('button', { name: /stop/i })
+  stopButton.focus()
+  expect(stopButton).toHaveFocus()
+
+  await userEvent.keyboard('q')
+  await waitFor(() => expect(screen.getByRole('button', { name: /^record$/i })).toHaveFocus())
+  expect(
+    calls.filter((call) => call.url === '/api/notes/mic' && call.method === 'POST'),
+  ).toHaveLength(0)
+})
+
+test('a repeated Q keydown while recording is ignored (key-repeat guard)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  fireEvent.keyDown(window, { key: 'q', repeat: true })
+
+  expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument()
+  expect(screen.queryByText(/discard this recording\?/i)).not.toBeInTheDocument()
+})
+
+test('R immediately after Q inside the stop window cannot resurrect a discarded take (race #1)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  // Synchronous keydowns, no await between: Q's stop() flips the recorder's own state
+  // to 'inactive' before R runs, so the guard must make R a no-op rather than steal
+  // the fate back to "send" out from under onstop (still pending on the microtask queue).
+  fireEvent.keyDown(window, { key: 'q' })
+  fireEvent.keyDown(window, { key: 'r' })
+
+  await waitFor(() => expect(screen.getByRole('button', { name: /^record$/i })).toBeInTheDocument())
+  expect(
+    calls.filter((call) => call.url === '/api/notes/mic' && call.method === 'POST'),
+  ).toHaveLength(0)
+})
+
+test('Q immediately after R inside the stop window cannot steal a stop-to-save (race #1)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch((url) =>
+    url === '/api/notes/mic' ? jsonResponse({ id: 'n6', status: 'processing' }, 201) : jsonResponse([]),
+  )
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  fireEvent.keyDown(window, { key: 'r' })
+  fireEvent.keyDown(window, { key: 'q' })
+
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.url === '/api/notes/mic' && call.method === 'POST'),
+    ).toHaveLength(1),
+  )
+})
+
+test('Q after Stop on a long take cannot open a stale discard confirm (race #1, long-take path)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch((url) =>
+    url === '/api/notes/mic' ? jsonResponse({ id: 'n7', status: 'processing' }, 201) : jsonResponse([]),
+  )
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+
+  // Synchronous keydowns, no await between: R's stop() flips the recorder's own state
+  // to 'inactive' before Q runs. requestCancel must gate on that recorder state (not
+  // stale React state.phase, which still reads 'recording' here) or it would raise a
+  // discard confirm over a take whose Discard button would then no-op.
+  fireEvent.keyDown(window, { key: 'r' })
+  fireEvent.keyDown(window, { key: 'q' })
+
+  // Check immediately: the confirm must never have appeared at all, not just be gone
+  // by the time onstop's later microtask settles things back to idle.
+  expect(screen.queryByText(/discard this recording\?/i)).not.toBeInTheDocument()
+
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => call.url === '/api/notes/mic' && call.method === 'POST'),
+    ).toHaveLength(1),
+  )
+  expect(screen.queryByText(/discard this recording\?/i)).not.toBeInTheDocument()
+  nowSpy.mockRestore()
+})
+
 test('the clear button empties the search and restores the archive', async () => {
   installMockRecorder()
   stubFetch((url) => {
@@ -414,6 +610,34 @@ test('an unreachable backend shows recovery, never a false empty state', async (
   expect(await screen.findByRole('button', { name: /^remember the deposit$/i })).toBeInTheDocument()
 })
 
+test('the shortcuts legend is visible on the list but hidden once a note is open', async () => {
+  installMockRecorder()
+  stubFetch((url) => {
+    if (url === '/api/notes/d1') {
+      return jsonResponse({
+        ...done,
+        transcript: 'remember the deposit',
+        source: 'mic',
+        original_filename: null,
+        mime_type: 'audio/webm',
+        transcription_model: 'fake-1',
+      })
+    }
+    return jsonResponse([done])
+  })
+  render(<App />)
+
+  // The list (and its legend) hides via the `hidden` attribute — contents stay in the
+  // DOM, so a plain queryByText-absence check would not catch this; toBeVisible does.
+  // aria-label is ARIA-prohibited on a <p>, so the legend is found by its class — its
+  // visible text is scattered across sibling kbd/span children, not one matchable node.
+  await waitFor(() => expect(document.querySelector('.shortcuts-legend')).toBeVisible())
+
+  await userEvent.click(await screen.findByRole('button', { name: /^remember the deposit$/i }))
+  await screen.findByRole('button', { name: /back to notes/i })
+  expect(document.querySelector('.shortcuts-legend')).not.toBeVisible()
+})
+
 test('escape closes the note detail and returns to the list', async () => {
   installMockRecorder()
   stubFetch((url) => {
@@ -439,4 +663,91 @@ test('escape closes the note detail and returns to the list', async () => {
     expect(screen.queryByRole('button', { name: /back to notes/i })).not.toBeInTheDocument(),
   )
   expect(screen.getByRole('searchbox')).toBeInTheDocument()
+})
+
+test('Escape with focus in the search box steps the search back only, leaving a mid-flight discard confirm up', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  stubFetch(() => jsonResponse([done]))
+  render(<App />)
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+  await userEvent.keyboard('q')
+  await screen.findByText(/discard this recording\?/i)
+
+  // `/` still works mid-confirm (App's shortcut listener doesn't know about the recorder).
+  await userEvent.keyboard('/')
+  const search = screen.getByRole('searchbox')
+  expect(search).toHaveFocus()
+  await userEvent.type(search, 'deposit')
+
+  await userEvent.keyboard('{Escape}')
+
+  // SearchBox's own Esc (clear-then-step-out) wins outright — the confirm's window
+  // listener must see this event already handled and never even react to it.
+  expect(search).toHaveValue('')
+  expect(screen.getByText(/discard this recording\?/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /keep recording/i })).toBeInTheDocument()
+
+  nowSpy.mockRestore()
+})
+
+test('Escape closes an open note before collapsing a pending discard confirm (F1, note wins)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch((url) => {
+    if (url === '/api/notes/d1') {
+      return jsonResponse({
+        ...done,
+        transcript: 'remember the deposit',
+        source: 'mic',
+        original_filename: null,
+        mime_type: 'audio/webm',
+        transcription_model: 'fake-1',
+      })
+    }
+    return jsonResponse([done])
+  })
+  render(<App />)
+  await screen.findByText('remember the deposit')
+
+  await userEvent.keyboard('r')
+  await screen.findByRole('button', { name: /stop/i })
+
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+  await userEvent.keyboard('q')
+  await screen.findByText(/discard this recording\?/i)
+
+  // Open a note over the still-pending confirm — the recorder stays mounted (just
+  // CSS-hidden), so its confirm-Escape listener and App's note-Escape listener are
+  // both live on window at once.
+  await userEvent.click(screen.getByRole('button', { name: /^remember the deposit$/i }))
+  expect(await screen.findByRole('button', { name: /back to notes/i })).toBeInTheDocument()
+
+  await userEvent.keyboard('{Escape}')
+
+  // The note closes — one step back...
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: /back to notes/i })).not.toBeInTheDocument(),
+  )
+  expect(screen.getByRole('searchbox')).toBeInTheDocument()
+  // ...but the confirm must still be up: the recorder's listener yielded rather than
+  // also collapsing it in the same keypress, and the recording itself never stopped.
+  expect(screen.getByText(/discard this recording\?/i)).toBeInTheDocument()
+  expect(screen.getByText(/keep recording/i)).toBeInTheDocument()
+  expect(
+    calls.filter((call) => call.url === '/api/notes/mic' && call.method === 'POST'),
+  ).toHaveLength(0)
+
+  // A second Escape, now back on the list, is what collapses the confirm.
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByText(/discard this recording\?/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /^stop$/i })).toBeInTheDocument()
+  expect(
+    calls.filter((call) => call.url === '/api/notes/mic' && call.method === 'POST'),
+  ).toHaveLength(0)
+
+  nowSpy.mockRestore()
 })
