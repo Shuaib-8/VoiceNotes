@@ -94,9 +94,14 @@ export class MockMediaRecorder {
   }
 
   stop(): void {
+    // The real UA flips .state synchronously but delivers ondataavailable/onstop later,
+    // on its own queue — the async gap is what makes the stop→onstop race (see
+    // Recorder.tsx's stopRecording/cancelRecording guard) reproducible in tests.
     this.state = 'inactive'
-    this.ondataavailable?.({ data: new Blob(['chunk'], { type: this.mimeType }) })
-    this.onstop?.()
+    queueMicrotask(() => {
+      this.ondataavailable?.({ data: new Blob(['chunk'], { type: this.mimeType }) })
+      this.onstop?.()
+    })
   }
 }
 

@@ -99,6 +99,22 @@ button.secondary:active {
   border: 0;
 }
 
+/* The faceplate legend: engraved, quiet, non-interactive — printed key labels, not controls. */
+.shortcuts-legend {
+  margin: 0 0 1.5rem;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.shortcuts-legend kbd {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  font: 0.85em var(--mono);
+  color: var(--text-h);
+}
+
 /* Loading rows: flat, static placeholders — the Flat Field Rule applies to waiting too. */
 .skeleton-card {
   border-style: dashed;

@@ -15,7 +15,7 @@ test('record then stop posts the blob with the recorder mimeType (AE1 client hal
   grantMicrophone()
   const { calls } = stubFetch(() => jsonResponse({ id: 'n1', status: 'processing' }, 201))
   const onIngested = vi.fn()
-  render(<Recorder onIngested={onIngested} />)
+  render(<Recorder onIngested={onIngested} listActive={true} />)
 
   await userEvent.click(screen.getByRole('button', { name: /record/i }))
   await userEvent.click(await screen.findByRole('button', { name: /stop/i }))
@@ -32,7 +32,7 @@ test('cancel discards the recording entirely — no request (R17)', async () => 
   installMockRecorder()
   grantMicrophone()
   const { calls } = stubFetch(() => jsonResponse({}))
-  render(<Recorder onIngested={vi.fn()} />)
+  render(<Recorder onIngested={vi.fn()} listActive={true} />)
 
   await userEvent.click(screen.getByRole('button', { name: /record/i }))
   await userEvent.click(await screen.findByRole('button', { name: /cancel/i }))
@@ -45,7 +45,7 @@ test('permission denied renders guidance, and try-again returns to idle', async 
   installMockRecorder()
   denyMicrophone('NotAllowedError')
   stubFetch(() => jsonResponse({}))
-  render(<Recorder onIngested={vi.fn()} />)
+  render(<Recorder onIngested={vi.fn()} listActive={true} />)
 
   await userEvent.click(screen.getByRole('button', { name: /record/i }))
   expect(await screen.findByText(/microphone access was denied/i)).toBeInTheDocument()
@@ -62,7 +62,7 @@ test('a failed send retains the blob and retry-send re-posts it — no silent lo
     failing ? new Error('connection refused') : jsonResponse({ id: 'n2', status: 'processing' }, 201),
   )
   const onIngested = vi.fn()
-  render(<Recorder onIngested={onIngested} />)
+  render(<Recorder onIngested={onIngested} listActive={true} />)
 
   await userEvent.click(screen.getByRole('button', { name: /record/i }))
   await userEvent.click(await screen.findByRole('button', { name: /stop/i }))
@@ -85,7 +85,7 @@ test('cancelling a long take asks for confirmation before discarding', async () 
   installMockRecorder()
   grantMicrophone()
   const { calls } = stubFetch(() => jsonResponse({ id: 'n3', status: 'processing' }, 201))
-  render(<Recorder onIngested={vi.fn()} />)
+  render(<Recorder onIngested={vi.fn()} listActive={true} />)
 
   await userEvent.click(screen.getByRole('button', { name: /record/i }))
   const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
@@ -101,5 +101,53 @@ test('cancelling a long take asks for confirmation before discarding', async () 
   await userEvent.click(screen.getByRole('button', { name: /^discard$/i }))
   expect(calls).toHaveLength(0) // R17: discarded entirely — no request
   expect(await screen.findByRole('button', { name: /record/i })).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: /record/i })).toHaveFocus())
+  nowSpy.mockRestore()
+})
+
+test('Escape on the discard confirm keeps recording and returns focus to Cancel (AE5)', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch(() => jsonResponse({ id: 'n4', status: 'processing' }, 201))
+  render(<Recorder onIngested={vi.fn()} listActive={true} />)
+
+  await userEvent.click(screen.getByRole('button', { name: /record/i }))
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+
+  await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+  expect(screen.getByText(/discard this recording\?/i)).toBeInTheDocument()
+
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByText(/discard this recording\?/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^cancel$/i })).toHaveFocus())
+
+  expect(calls).toHaveLength(0)
+  nowSpy.mockRestore()
+})
+
+test('Escape still collapses the discard confirm once focus has moved off it entirely', async () => {
+  installMockRecorder()
+  grantMicrophone()
+  const { calls } = stubFetch(() => jsonResponse({ id: 'n5', status: 'processing' }, 201))
+  render(<Recorder onIngested={vi.fn()} listActive={true} />)
+
+  await userEvent.click(screen.getByRole('button', { name: /record/i }))
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11_000)
+
+  await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+  expect(screen.getByText(/discard this recording\?/i)).toBeInTheDocument()
+
+  // The confirm deliberately survives focus-out (e.g. `/` focusing search in the app),
+  // so Esc must reach it via a window listener, not one scoped to the confirm's span.
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  expect(document.activeElement).toBe(document.body)
+
+  await userEvent.keyboard('{Escape}')
+  expect(screen.queryByText(/discard this recording\?/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^cancel$/i })).toHaveFocus())
+
+  expect(calls).toHaveLength(0)
   nowSpy.mockRestore()
 })

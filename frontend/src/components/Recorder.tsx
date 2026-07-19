@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { uploadMicBlob } from '../api'
 import { formatDuration } from '../format'
+import { isTypingTarget } from '../keyboard'
 
 type RecorderState =
   | { phase: 'idle' }
@@ -25,11 +26,14 @@ function formatElapsed(startedAt: number, now: number): string {
 
 interface RecorderProps {
   onIngested: (noteId: string) => void
+  // Whether the list view (not a note overlay) is active — gates the confirm-Escape
+  // listener so it yields while a note is open (F1: note closes first, confirm second).
+  listActive: boolean
 }
 
 const CANCEL_CONFIRM_AFTER_MS = 10_000
 
-export default function Recorder({ onIngested }: RecorderProps): ReactElement {
+export default function Recorder({ onIngested, listActive }: RecorderProps): ReactElement {
   const [state, setState] = useState<RecorderState>({ phase: 'idle' })
   const [now, setNow] = useState<number>(() => Date.now())
   const [confirmingCancel, setConfirmingCancel] = useState(false)
@@ -37,6 +41,11 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
   const chunksRef = useRef<Blob[]>([])
   const cancellingRef = useRef<boolean>(false)
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
+  const recordButtonRef = useRef<HTMLButtonElement | null>(null)
+  // Set when onstop's silent-discard branch fires; consumed once idle renders so a
+  // Q-cancel (focus already off any button) or a mouse-cancel (Cancel just unmounted)
+  // never leaves focus resting on <body> (Focus Doctrine).
+  const justCancelledRef = useRef<boolean>(false)
 
   const guarding = state.phase === 'recording' || state.phase === 'send-failed'
   useEffect(() => {
@@ -94,6 +103,7 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
       const chunks = chunksRef.current
       chunksRef.current = []
       if (cancellingRef.current) {
+        justCancelledRef.current = true
         setState({ phase: 'idle' }) // R17: discard entirely — no note, no request
         return
       }
@@ -106,19 +116,30 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
     setState({ phase: 'recording', startedAt: Date.now() })
   }, [send])
 
+  // onstop is async (fires after the UA delivers final data), but MediaRecorder.state
+  // flips to 'inactive' synchronously on the first stop() call — so both buttons stay
+  // reachable until onstop runs, and a second command in that window (R after Q, or
+  // Q after R) must no-op rather than overwrite cancellingRef out from under onstop.
+  // Guarding on the recorder's own state (not React's) makes the first command win.
   const stopRecording = useCallback((): void => {
+    if (recorderRef.current?.state !== 'recording') return
     cancellingRef.current = false
     setConfirmingCancel(false)
-    recorderRef.current?.stop()
+    recorderRef.current.stop()
   }, [])
 
   const cancelRecording = useCallback((): void => {
+    if (recorderRef.current?.state !== 'recording') return
     cancellingRef.current = true
     setConfirmingCancel(false)
-    recorderRef.current?.stop()
+    recorderRef.current.stop()
   }, [])
 
   const requestCancel = useCallback((): void => {
+    // The recorder may already be stopping in the async gap before onstop flips
+    // phase (a Stop or prior Cancel in flight); don't raise a confirm over a take
+    // whose fate is already sealed — its Discard would no-op.
+    if (recorderRef.current?.state !== 'recording') return
     if (state.phase !== 'recording') return
     // A short false start discards silently (R17); a real take is worth a confirm —
     // Cancel destroys the only copy there is.
@@ -128,6 +149,43 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
       cancelRecording()
     }
   }, [state, cancelRecording])
+
+  const keepRecording = useCallback((): void => {
+    setConfirmingCancel(false)
+    requestAnimationFrame(() => cancelButtonRef.current?.focus())
+  }, [])
+
+  // Esc backs out of the discard confirm the same way DeleteNoteButton's does:
+  // the take is worth keeping by default, so Esc returns to it rather than losing it.
+  // Listens on window rather than the confirm's own span because the confirm
+  // deliberately survives focus-out (e.g. `/` can focus search while it's up), and a
+  // span-scoped handler would never see an Escape typed somewhere else on the page.
+  // Yields while a note is open (!listActive) so that Esc closes the note first —
+  // a second Esc, now back on the list, is what collapses the confirm (F1).
+  useEffect(() => {
+    if (!confirmingCancel || !listActive) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // SearchBox's own Esc handling must keep winning while it's focused — one
+      // keypress must never both step the search back AND collapse the confirm.
+      if (isTypingTarget(event.target)) return
+      event.preventDefault()
+      keepRecording()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [confirmingCancel, listActive, keepRecording])
+
+  // A cancel just completed silently — either the Cancel button unmounted (mouse
+  // path) or focus was never on a button to begin with (Q path). Land on Record
+  // only if focus really did fall to <body>; never steal it from a real element.
+  useEffect(() => {
+    if (state.phase !== 'idle' || !justCancelledRef.current) return
+    justCancelledRef.current = false
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body) recordButtonRef.current?.focus()
+    })
+  }, [state.phase])
 
   if (state.phase === 'unsupported') {
     return <p className="recorder-message">This browser cannot record audio — use Chrome, or upload a file instead.</p>
@@ -192,10 +250,7 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
               type="button"
               autoFocus
               className="confirm-keep"
-              onClick={() => {
-                setConfirmingCancel(false)
-                requestAnimationFrame(() => cancelButtonRef.current?.focus())
-              }}
+              onClick={keepRecording}
             >
               Keep recording
             </button>
@@ -216,6 +271,8 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
               type="button"
               ref={cancelButtonRef}
               className="cancel-button"
+              aria-keyshortcuts="q"
+              title="Cancel (Q)"
               onClick={requestCancel}
             >
               Cancel
@@ -229,6 +286,7 @@ export default function Recorder({ onIngested }: RecorderProps): ReactElement {
     <div className="recorder">
       <button
         type="button"
+        ref={recordButtonRef}
         className="primary record-button"
         aria-keyshortcuts="r"
         title="Record (R)"

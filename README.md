@@ -79,8 +79,9 @@ Open http://127.0.0.1:8477 in your browser. Everything is one scrolling column �
 | Key | Action |
 | --- | --- |
 | `R` | Start recording — press again to Stop |
+| `Q` | Cancel the recording — a short take discards at once; a longer take asks first |
 | `/` | Jump to the search box |
-| `Esc` | Step back: clear the search, then leave the field; or close an open note |
+| `Esc` | Step back: clear the search, then leave the field; close an open note; or keep recording when asked to confirm a discard |
 
 **Navigation & actions** — click a note's title to open it; **← Back** (or `Esc`) returns to the list with your search and any in-progress recording intact. Each done note has one-click **Copy** (transcript to clipboard) and **Delete** (moves to the archive's `.trash` with an inline **Undo** — nothing is ever erased). Failed notes show **Retry**. The sun/moon toggle switches light/dark and otherwise follows your system.
 

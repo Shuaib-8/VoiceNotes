@@ -3,7 +3,9 @@ import type { ReactElement } from 'react'
 import type { NoteSummary } from './api'
 import { listNotes, restoreNote, searchNotes } from './api'
 import SearchBox from './components/SearchBox'
+import ShortcutsLegend from './components/ShortcutsLegend'
 import ThemeToggle from './components/ThemeToggle'
+import { isTypingTarget } from './keyboard'
 import NoteDetail from './views/NoteDetail'
 import NotesList from './views/NotesList'
 import RecordView from './views/RecordView'
@@ -103,22 +105,28 @@ export default function App(): ReactElement {
     if (route.view !== 'list') return
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
-      const target = event.target
-      const typing =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
-      if (typing) return
+      if (isTypingTarget(event.target)) return
       if (event.key === '/') {
         event.preventDefault()
         document.querySelector<HTMLInputElement>('.searchbox input')?.focus()
       } else if (event.key === 'r' || event.key === 'R') {
         // One key, both directions: Record while idle, Stop while recording.
-        // Neither exists during the discard confirm, so R can't preempt that decision.
+        // Neither the take-key nor Cancel exists during the discard confirm, so
+        // R and Q can't preempt that decision.
         const takeKey = document.querySelector<HTMLButtonElement>('.record-button, .stop-button')
         if (takeKey !== null) {
           event.preventDefault()
           takeKey.click()
+        }
+      } else if ((event.key === 'q' || event.key === 'Q') && !event.repeat) {
+        // Cancel while recording. The repeat guard matters here in a way it doesn't
+        // for R: during a short-take cancel, .cancel-button stays mounted until the
+        // recorder's async onstop fires, so key-repeat is NOT self-limiting on that
+        // path (unlike the confirm path, where the button unmounts immediately).
+        const cancelKey = document.querySelector<HTMLButtonElement>('.cancel-button')
+        if (cancelKey !== null) {
+          event.preventDefault()
+          cancelKey.click()
         }
       }
     }
@@ -195,7 +203,8 @@ export default function App(): ReactElement {
           <SearchBox onSearch={search} onClear={clearSearch} />
           <ThemeToggle />
         </header>
-        <RecordView onIngested={refresh} />
+        <RecordView onIngested={refresh} listActive={route.view !== 'note'} />
+        <ShortcutsLegend />
         {trashed !== null && (
           <p className="trash-notice" role="status">
             <span>

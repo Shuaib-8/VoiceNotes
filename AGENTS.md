@@ -72,7 +72,7 @@ Frontend/UI work is governed by two root files (authored on the `worktree-fronte
 
 Two frontend invariants the components uphold (breaking them is silent, not loud): **Focus Doctrine** — focus is never allowed to drop to `<body>`; every note card carries `data-note-id` + `tabIndex={-1}` and openable ones add `data-note-open`, so `focusAfterPaint(...selectors)` can always land on a real target (opener → card fallback) after a route change, delete, or undo. **Delete is trash, never erase** — a delete is an `os.rename` into `<archive>/.trash/` (recoverable, 409 while transcribing), and its inline Undo is honest: an `'idle' | 'undoing' | 'failed'` status keeps the notice up and names the failure rather than claiming a note returned when `restore` failed.
 
-The keyboard map (`R` record/stop, `/` search, `Esc` step-out) lives in `App.tsx` + `Recorder.tsx` and is user-documented in the README's "Using it" section — change both together.
+The keyboard map (`R` record/stop, `Q` cancel recording, `/` search, `Esc` step-out) lives in `App.tsx` + `Recorder.tsx`, is surfaced in-app by `components/ShortcutsLegend.tsx`, and is user-documented in the README's "Using it" section — change all of them together.
 
 ## Conventions
 
