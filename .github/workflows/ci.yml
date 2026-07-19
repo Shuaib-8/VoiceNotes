@@ -4,9 +4,13 @@
 # every lane installs strictly from the committed lock.
 name: ci
 
-# Triggers: merges into main (a merge lands as a push to main) plus manual dispatch
+# Triggers: PRs targeting main (so a break blocks the merge, once the branch
+# ruleset lists these jobs as required checks), merges into main (a merge lands
+# as a push to main, catching anything that bypassed a PR), plus manual dispatch
 # for on-demand runs on any branch — not every push to every branch.
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
