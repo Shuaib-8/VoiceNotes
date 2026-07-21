@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import App from './App'
 import type { NoteSummary } from './api'
+import { PLAYBACK_SPEED_STORAGE_KEY } from './playbackSpeed'
 import {
   grantMicrophone,
   installMockRecorder,
@@ -50,6 +51,7 @@ function listCalls(calls: FetchCall[]): number {
 
 afterEach(() => {
   vi.useRealTimers()
+  localStorage.clear()
 })
 
 test('an empty archive renders the first-run empty state pointing at Record', async () => {
@@ -204,6 +206,144 @@ test('opening a done note shows its transcript; Back preserves the active search
   expect(screen.getByRole('searchbox')).toHaveValue('deposit')
   expect(screen.getByRole('button', { name: /^remember the deposit$/i })).toBeInTheDocument()
   expect(screen.queryByText('groceries for the week')).not.toBeInTheDocument()
+})
+
+test('opening a note with audio shows the playback-speed control at 1x by default', async () => {
+  installMockRecorder()
+  stubFetch((url) => {
+    if (url === '/api/notes/d1') {
+      return jsonResponse({
+        ...done,
+        transcript: 'remember the deposit',
+        source: 'mic',
+        original_filename: null,
+        mime_type: 'audio/webm',
+        transcription_model: 'fake-1',
+      })
+    }
+    return jsonResponse([done])
+  })
+  render(<App />)
+
+  await userEvent.click(await screen.findByRole('button', { name: /^remember the deposit$/i }))
+  expect(await screen.findByRole('radiogroup', { name: /playback speed/i })).toBeInTheDocument()
+  const audio = screen.getByTestId('audio-player') as HTMLAudioElement
+  expect(audio.playbackRate).toBe(1)
+})
+
+test('selecting 2x sets the audio playbackRate without touching its src', async () => {
+  installMockRecorder()
+  stubFetch((url) => {
+    if (url === '/api/notes/d1') {
+      return jsonResponse({
+        ...done,
+        transcript: 'remember the deposit',
+        source: 'mic',
+        original_filename: null,
+        mime_type: 'audio/webm',
+        transcription_model: 'fake-1',
+      })
+    }
+    return jsonResponse([done])
+  })
+  render(<App />)
+
+  await userEvent.click(await screen.findByRole('button', { name: /^remember the deposit$/i }))
+  const audio = (await screen.findByTestId('audio-player')) as HTMLAudioElement
+  const src = audio.getAttribute('src')
+
+  await userEvent.click(screen.getByRole('radio', { name: '2×' }))
+
+  expect(audio.playbackRate).toBe(2)
+  expect(audio.defaultPlaybackRate).toBe(2)
+  expect(audio.getAttribute('src')).toBe(src)
+})
+
+test('a stored speed of 1.5 is applied to the audio element on mount', async () => {
+  installMockRecorder()
+  localStorage.setItem(PLAYBACK_SPEED_STORAGE_KEY, '1.5')
+  stubFetch((url) => {
+    if (url === '/api/notes/d1') {
+      return jsonResponse({
+        ...done,
+        transcript: 'remember the deposit',
+        source: 'mic',
+        original_filename: null,
+        mime_type: 'audio/webm',
+        transcription_model: 'fake-1',
+      })
+    }
+    return jsonResponse([done])
+  })
+  render(<App />)
+
+  await userEvent.click(await screen.findByRole('button', { name: /^remember the deposit$/i }))
+  const audio = await screen.findByTestId('audio-player')
+  await waitFor(() => expect((audio as HTMLAudioElement).playbackRate).toBe(1.5))
+  expect((audio as HTMLAudioElement).defaultPlaybackRate).toBe(1.5)
+  expect(screen.getByRole('radio', { name: '1.5×' })).toBeChecked()
+})
+
+test('a note without audio renders no playback-speed control', async () => {
+  installMockRecorder()
+  const noAudio: NoteSummary = { ...done, id: 'd3', title: 'no audio note', has_audio: false }
+  stubFetch((url) => {
+    if (url === '/api/notes/d3') {
+      return jsonResponse({
+        ...noAudio,
+        transcript: 'no audio here',
+        source: 'upload',
+        original_filename: 'clip.wav',
+        mime_type: null,
+        transcription_model: null,
+      })
+    }
+    return jsonResponse([noAudio])
+  })
+  render(<App />)
+
+  await userEvent.click(await screen.findByRole('button', { name: /^no audio note$/i }))
+  await screen.findByText('no audio here')
+  expect(screen.queryByRole('radiogroup', { name: /playback speed/i })).not.toBeInTheDocument()
+  expect(screen.queryByTestId('audio-player')).not.toBeInTheDocument()
+})
+
+test('a selected speed persists from one opened note to the next', async () => {
+  installMockRecorder()
+  stubFetch((url) => {
+    if (url === '/api/notes/d1') {
+      return jsonResponse({
+        ...done,
+        transcript: 'remember the deposit',
+        source: 'mic',
+        original_filename: null,
+        mime_type: 'audio/webm',
+        transcription_model: 'fake-1',
+      })
+    }
+    if (url === '/api/notes/d2') {
+      return jsonResponse({
+        ...groceries,
+        transcript: 'groceries for the week',
+        source: 'mic',
+        original_filename: null,
+        mime_type: 'audio/webm',
+        transcription_model: 'fake-1',
+      })
+    }
+    return jsonResponse([done, groceries])
+  })
+  render(<App />)
+
+  await userEvent.click(await screen.findByRole('button', { name: /^remember the deposit$/i }))
+  await userEvent.click(await screen.findByRole('radio', { name: '1.5×' }))
+  expect((screen.getByTestId('audio-player') as HTMLAudioElement).playbackRate).toBe(1.5)
+
+  await userEvent.click(screen.getByRole('button', { name: /back to notes/i }))
+  await userEvent.click(await screen.findByRole('button', { name: /^groceries for the week$/i }))
+
+  const secondAudio = await screen.findByTestId('audio-player')
+  await waitFor(() => expect((secondAudio as HTMLAudioElement).playbackRate).toBe(1.5))
 })
 
 test('search results show the matched line with the query emphasized', async () => {
