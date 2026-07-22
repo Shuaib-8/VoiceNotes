@@ -4,7 +4,9 @@ import type { NoteDetail as NoteDetailData } from '../api'
 import { audioUrl, getNote } from '../api'
 import CopyButton from '../components/CopyButton'
 import DeleteNoteButton from '../components/DeleteNoteButton'
+import PlaybackSpeedControl from '../components/PlaybackSpeedControl'
 import { describeSource, formatDetailStamp, formatDuration, humanizeModel } from '../format'
+import { getStoredPlaybackSpeed, storePlaybackSpeed, type PlaybackSpeed } from '../playbackSpeed'
 
 interface NoteDetailProps {
   noteId: string
@@ -15,12 +17,24 @@ interface NoteDetailProps {
 export default function NoteDetail({ noteId, onBack, onDeleted }: NoteDetailProps): ReactElement {
   const [note, setNote] = useState<NoteDetailData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [speed, setSpeed] = useState<PlaybackSpeed>(() => getStoredPlaybackSpeed())
   const titleRef = useRef<HTMLHeadingElement | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // Focus lands on the note title, not <body>, so keyboard/SR users keep their place.
   useEffect(() => {
     if (note !== null) titleRef.current?.focus()
   }, [note])
+
+  // The <audio> element remounts per note, so the persisted/selected speed must be
+  // re-applied whenever the loaded note changes, not just when the speed itself changes.
+  useEffect(() => {
+    const el = audioRef.current
+    if (el !== null) {
+      el.playbackRate = speed
+      el.defaultPlaybackRate = speed // survives a media re-load; cheap insurance
+    }
+  }, [speed, note])
 
   useEffect(() => {
     let cancelled = false
@@ -36,6 +50,11 @@ export default function NoteDetail({ noteId, onBack, onDeleted }: NoteDetailProp
       cancelled = true
     }
   }, [noteId])
+
+  const handleSpeedChange = (next: PlaybackSpeed): void => {
+    setSpeed(next)
+    storePlaybackSpeed(next)
+  }
 
   // Machine internals never lead: provenance is a quieter second line in plain words.
   const provenance =
@@ -96,8 +115,11 @@ export default function NoteDetail({ noteId, onBack, onDeleted }: NoteDetailProp
             />
           </div>
           {note.has_audio && (
-            /* Seeking works because the backend serves Range requests. */
-            <audio controls src={audioUrl(note.id)} data-testid="audio-player" />
+            <div className="note-audio">
+              <PlaybackSpeedControl speed={speed} onChange={handleSpeedChange} />
+              {/* Seeking works because the backend serves Range requests. */}
+              <audio ref={audioRef} controls src={audioUrl(note.id)} data-testid="audio-player" />
+            </div>
           )}
           <div className="transcript">
             {note.transcript ? (
