@@ -47,7 +47,17 @@ jobs:
         run: uv run pyrefly check src tests
 
       - name: Backend tests (fake engine)
-        run: uv run pytest
+        run: uv run pytest --cov=voice_notes --cov-branch --cov-report=xml
+
+      # The fake-engine suite covers the same lines on every OS, so one lane's
+      # report is canonical — uploading all three would only add noise and flakes.
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage.xml
+          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - uses: actions/setup-node@v6
         with:

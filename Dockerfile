@@ -29,7 +29,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=README.md,target=README.md \
     uv sync --locked --no-install-project --no-dev
 
-COPY pyproject.toml uv.lock README.md ./
+# LICENSE is required at build time: project.license-files globs it during packaging
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
