@@ -1,12 +1,11 @@
 # VoiceNotes
 
 [![CI](https://github.com/Shuaib-8/VoiceNotes/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shuaib-8/VoiceNotes/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/Shuaib-8/VoiceNotes/branch/main/graph/badge.svg)](https://codecov.io/gh/Shuaib-8/VoiceNotes)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#prerequisites)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![License: MIT](https://img.shields.io/github/license/Shuaib-8/VoiceNotes)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Personal, local-first voice notes: record from the mic or upload a voice file (Apple Voice Memos `.m4a`, WhatsApp `.opus`, …), get a transcript within seconds from a **local** model, and keep every note as plain files — immutable original audio plus a markdown transcript — in an archive folder any modern notes tool can open. No cloud, no accounts, no database.
 
