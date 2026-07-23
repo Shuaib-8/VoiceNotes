@@ -1,6 +1,7 @@
 # VoiceNotes
 
 [![CI](https://github.com/Shuaib-8/VoiceNotes/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shuaib-8/VoiceNotes/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Shuaib-8/VoiceNotes/branch/main/graph/badge.svg)](https://codecov.io/gh/Shuaib-8/VoiceNotes)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#prerequisites)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
