@@ -3,6 +3,8 @@ name = "voice-notes"
 version = "0.1.0"
 description = "Personal, local-first voice notes: record or upload, transcribe locally, keep every note as plain files."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",
@@ -27,6 +29,7 @@ dev = [
     "ruff>=0.8",
     "pyrefly>=0.16",
     "types-pyyaml>=6.0.12.20260518",
+    "pytest-cov>=7.1.0",
 ]
 
 [build-system]
